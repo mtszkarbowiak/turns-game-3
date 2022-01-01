@@ -187,6 +187,12 @@ namespace data_model{
         creature_i* target;
         float value;
     };
+
+    struct selection_i{
+        int index;
+        creature_i* selected;
+        bool is_player_team;
+    };
 }
 
 
@@ -326,6 +332,8 @@ namespace logic{
 
     event<damage_i> on_damage;
     event<creature_i*> on_death;
+    event<selection_i> on_selection;
+
 
     namespace internal
     {
@@ -351,7 +359,7 @@ namespace logic{
             const creature_meta_t* get_creature() override { return m_creature_meta; }
 
             void evolute() {
-                if(!can_evolute())
+                if(!can_evolute())           //TODO Fix evolution mechanic.
                 {
                     cout << "INTERNAL ERROR: Can not evolute the creature!" << std::endl;
                     return;
@@ -410,7 +418,9 @@ namespace logic{
 
             creature_t* get_creature_mutable(int index) { return m_creatures.at(index); }
             creature_t* get_selected_creature_mutable() { return m_creatures.at(m_selection_index); }
-            void set_selected_creature(int index) { m_selection_index = index; }
+            void set_selected_creature(int index) {
+                m_selection_index = index;
+            }
 
             bool is_defeated() override {
                 for (auto creature : m_creatures) {
@@ -496,10 +506,11 @@ namespace logic{
             }
 
             void make_turn_select_creature(bool player_team, int selection_index) override {
-                get_enemy_team_mutable(player_team)->set_selected_creature(selection_index);
+                get_team(player_team)->set_selected_creature(selection_index);
+                on_selection.invoke({selection_index, get_team(player_team)->get_selected_creature(), player_team});
             }
             void make_turn_evolute(bool player_team) override {
-                get_enemy_team_mutable(player_team)->get_selected_creature_mutable()->evolute();
+                get_team(player_team)->get_selected_creature_mutable()->evolute();
             }
             void make_turn_use_attack(bool player_team) override {
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
@@ -653,7 +664,7 @@ namespace view{
     }
 
     void show_team_status2(team_i* team, bool player_team) {
-            cout << (player_team ? "---* YOUR TEAM *---" : "---* ENEMY TEAM *---") << endl << endl;
+            cout  << endl<< (player_team ? "---* YOUR TEAM *---" : "---* ENEMY TEAM *---") << endl;
 
         for (int i = 0; i < team->get_creature_count(); ++i) {
             auto creature = team->get_creature(i);
@@ -664,22 +675,27 @@ namespace view{
                 << creature->get_evolution()->name << "'>";
 
             if(team->get_selected_creature() == creature)
-                cout << " (ON ARENA)";
+                cout << " <--- ON ARENA --->";
 
             cout << endl;
 
-            cout << creature->get_health() << "/" << creature->get_evolution()->max_health << " HP ";
-            show_bar(creature->get_health(), creature->get_evolution()->max_health, health_display_unit, '=');
-            cout << endl;
+
+            if(!team->get_selected_creature()->is_alive())
+                cout << "-- DEAD --";
+            else{
+                cout << creature->get_health() << "/" << creature->get_evolution()->max_health << " HP ";
+                show_bar(creature->get_health(), creature->get_evolution()->max_health, health_display_unit, '=');
+            }
+            cout << "\t\t\t\t";
 
             cout << creature->get_exp() << "/" << creature->get_evolution()->required_exp << " EXP ";
             show_bar(creature->get_exp(), creature->get_evolution()->required_exp, health_display_unit, '*');
-            cout << endl << endl;
+            cout << endl;
         }
     }
 
     void show_turn(bool player_turn) {
-        cout << (player_turn ? "Player turn!" : "Computer turn!") << endl;
+        cout << endl << (player_turn ? "---* PLAYER TURN *---" : "---* COMPUTER TURN *---") << endl;
     }
 
     void show_game_start_prompt() {
@@ -725,7 +741,7 @@ namespace controller{
         if(game_status->can_make_turn_use_skill(true))
             cout << skill_input_key << ") Use skill" << endl;
         if(game_status->can_make_turn_evolute(true))
-            cout << evolution_input_key << ") Use attack" << endl;
+            cout << evolution_input_key << ") Evolution" << endl;
         if(game_status->can_make_turn_select_any_creature(true))
             cout << change_input_key << ") Change creature on the arena" << endl;
 
@@ -871,6 +887,12 @@ int main() {
 
     on_damage.subscribe(show_creature_damaging);
     on_death.subscribe(show_creature_death);
+    on_selection.subscribe([=](selection_i selection){
+       cout
+           << (selection.is_player_team ? "Player" : "Bot" )
+           << " has selected " << selection.selected->get_creature()->name
+           << " (" << selection.index << ")" << endl;
+    });
 
 
     import_data();
@@ -885,13 +907,14 @@ int main() {
 
     do{
         bool player_team = game->is_player_turn();
-        show_turn(game->is_player_turn());
 
         if(game->is_player_turn())
         {
             show_team_status2(game->get_enemy_team(0), false);
             show_team_status2(game->get_player_team(), true);
         }
+
+        show_turn(game->is_player_turn());
 
         player_action player_action;
 
@@ -909,7 +932,7 @@ int main() {
                 int selection = player_team ?
                                 ask_for_creature_reselection(game->get_player_team()) :
                                 get_enemy_selection(game);
-                game->can_make_turn_select_creature(player_team,selection);
+                game->make_turn_select_creature(player_team,selection);
             } break;
             case player_action_none:
                 cout << "INTERNAL ERROR: Null player action handling." << endl;
