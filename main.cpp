@@ -16,6 +16,11 @@ using std::function;
 
 
 namespace maths2{
+    /// Limits value to specific bounds
+    /// @param t Original value.
+    /// @param min Minimal output.
+    /// @param max Maximal output.
+    /// @return Bounded t.
     float clamp(float t, float min, float max){
         if(t > max) return max;
         if(t < min) return min;
@@ -32,10 +37,14 @@ namespace events{
         vector<function<void(args_t)>> listeners;
 
     public:
+        /// Adds function to invoke list making it a listener.
+        /// @param listener New listener.
         void subscribe(function<void(args_t)> listener){
             listeners.push_back(listener);
         }
 
+        /// Invokes all listeners.
+        /// @param args Argument passed to all listeners.
         void invoke(args_t args){
             for (auto listener : listeners) {
                 listener(args);
@@ -515,12 +524,12 @@ namespace logic{
 
             static void damage(creature_t* attacker, creature_t* target, float value){
                 target->damage_anonymously(value);
+                on_damage.invoke({attacker, target, value});
 
                 if(!target->is_alive()){
                     attacker->give_exp(target->get_evolution()->bounty_exp);
+                    on_death.invoke(target);
                 }
-
-                on_damage.invoke({attacker, target, value});
             }
         };
     }
@@ -681,8 +690,12 @@ namespace view{
     void show_creature_damaging(const damage_i& dmg_i) {
         cout
                 << dmg_i.attacker->get_creature()->name << " has attacked "
-                << dmg_i.target->get_evolution()->name << " for "
+                << dmg_i.target->get_creature()->name << " for "
                 << dmg_i.value << " HP." << endl;
+    }
+
+    void show_creature_death(creature_i* corpse){
+        cout << corpse->get_creature()->name << " has died!" << endl;
     }
 }
 
@@ -698,20 +711,23 @@ namespace controller{
 
     template<typename t> t keep_asking(function<t()> ask_func);
 
-    constexpr char attack_input = 'a';
-    constexpr char skill_input = 's';
-    constexpr char evolution_input = 'e';
-    constexpr char change_input = 'c';
+    constexpr char attack_input_key = 'a';
+    constexpr char skill_input_key = 's';
+    constexpr char evolution_input_key = 'e';
+    constexpr char change_input_key = 'c';
 
+    /// Asks the player what type of action he wants his creature on arena to perform.
+    /// @param game_status Contemporary game status. //TODO This method is too privileged.
+    /// @return Selected player action.
     player_action ask_for_player_action(game_status_i* game_status) {
         if(game_status->can_make_turn_use_attack(true))
-            cout << attack_input<<  ") Use attack" << endl;
+            cout << attack_input_key << ") Use attack" << endl;
         if(game_status->can_make_turn_use_skill(true))
-            cout << skill_input << ") Use skill" << endl;
+            cout << skill_input_key << ") Use skill" << endl;
         if(game_status->can_make_turn_evolute(true))
-            cout << evolution_input << ") Use attack" << endl;
+            cout << evolution_input_key << ") Use attack" << endl;
         if(game_status->can_make_turn_select_any_creature(true))
-            cout << change_input << ") Change creature on the arena" << endl;
+            cout << change_input_key << ") Change creature on the arena" << endl;
 
         char input;
         player_action result = player_action_none;
@@ -720,10 +736,10 @@ namespace controller{
         {
             cin >> input;
             switch (input) {
-                case attack_input: result = player_action_attack; break;
-                case skill_input: result = player_action_skill_use; break;
-                case evolution_input: result = player_action_evolution; break;
-                case change_input: result = player_action_creature_reselection; break;
+                case attack_input_key: result = player_action_attack; break;
+                case skill_input_key: result = player_action_skill_use; break;
+                case evolution_input_key: result = player_action_evolution; break;
+                case change_input_key: result = player_action_creature_reselection; break;
                 default: {
                     show_invalid_index_answer_dialog();
                     result = player_action_none;
@@ -734,16 +750,11 @@ namespace controller{
         return result;
     }
 
-    int ask_for_creature_reselection(team_i* team, bool full) {
+    /// Asks the player to select different creature to be fighting.
+    /// @param team The team of player.
+    /// @return Index of newly selected creature.
+    int ask_for_creature_reselection(team_i* team) {
         cout << "Select creature sent to the arena:" << endl;
-
-        if(full){
-            for (int i = 0; i < team->get_creature_count(); ++i) {
-                auto creature = team->get_creature(i);
-                cout << i << ") " << creature->get_creature()->name
-                     << " <" << creature->get_evolution()->name << ">" << endl;
-            }
-        }
 
         int result = -1;
         while (result == -1){
@@ -858,26 +869,29 @@ int main() {
     using namespace ai;
 
 
-    on_damage.subscribe([=](damage_i dmg_i){
-        show_creature_damaging(dmg_i);
-    });
+    on_damage.subscribe(show_creature_damaging);
+    on_death.subscribe(show_creature_death);
 
 
     import_data();
 
     auto game = init_new_game();
     show_game_start_prompt();
-
-    show_team_status2(game->get_enemy_team(0), false);
     show_team_status2(game->get_player_team(), true);
 
-    int first_selected_creature = ask_for_creature_reselection(game->get_player_team(), false);
+    int first_selected_creature = ask_for_creature_reselection(game->get_player_team());
     game->make_turn_select_creature(true, first_selected_creature);
 
 
     do{
         bool player_team = game->is_player_turn();
         show_turn(game->is_player_turn());
+
+        if(game->is_player_turn())
+        {
+            show_team_status2(game->get_enemy_team(0), false);
+            show_team_status2(game->get_player_team(), true);
+        }
 
         player_action player_action;
 
@@ -893,7 +907,7 @@ int main() {
             case player_action_evolution: game->make_turn_evolute(player_team); break;
             case player_action_creature_reselection: {
                 int selection = player_team ?
-                                ask_for_creature_reselection(game->get_player_team(), false) :
+                                ask_for_creature_reselection(game->get_player_team()) :
                                 get_enemy_selection(game);
                 game->can_make_turn_select_creature(player_team,selection);
             } break;
@@ -902,9 +916,7 @@ int main() {
                 break;
         }
 
-        show_team_status2(game->get_enemy_team(0), false);
-        show_team_status2(game->get_player_team(), true);
-
         game->swap_turns();
-    } while (!game->is_game_over());
+    }
+    while (!game->is_game_over());
 }
