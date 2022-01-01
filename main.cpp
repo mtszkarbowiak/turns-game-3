@@ -1,5 +1,4 @@
 #include <iostream>
-#include <iostream>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -17,13 +16,32 @@ using std::function;
 
 
 namespace maths2{
-
     float clamp(float t, float min, float max){
         if(t > max) return max;
         if(t < min) return min;
         return t;
     }
+}
 
+
+
+namespace events{
+    template<class args_t>
+    class event{
+    private:
+        vector<function<void(args_t)>> listeners;
+
+    public:
+        void subscribe(function<void(args_t)> listener){
+            listeners.push_back(listener);
+        }
+
+        void invoke(args_t args){
+            for (auto listener : listeners) {
+                listener(args);
+            }
+        }
+    };
 }
 
 
@@ -152,6 +170,14 @@ namespace data_model{
                 this->get_evolution()->next_evolution != nullptr &&
                 this->is_alive();
     }
+
+
+
+    struct damage_i{
+        creature_i* attacker;
+        creature_i* target;
+        float value;
+    };
 }
 
 
@@ -184,69 +210,6 @@ namespace data_importing{
     }
 
 
-    void load_difficulties() {
-        auto* difficulties_temp = new vector<const difficulty_t*>;
-        std::ifstream i(difficulties_file_name);
-        while (!i.eof()){
-            auto difficulty = new difficulty_t;
-            i >> difficulty->name;
-            i >> difficulty->out_dmg_mul;
-            i >> difficulty->in_dmg_mul;
-            i >> difficulty->enemy_count;
-            i >> difficulty->player_count;
-            difficulties_temp->push_back(difficulty);
-        }
-        i.close();
-        difficulties = difficulties_temp;
-    }
-
-    void load_creatures() {
-        auto* creatures_temp = new vector<const creature_meta_t*>;
-        std::ifstream i(creatures_file_name);
-        while (!i.eof()){
-            auto creature = new creature_meta_t;
-            i >> creature->id;
-            i >> creature->name;
-
-            string element_name;
-            i >> element_name;
-            creature->element = get_element_by_name(element_name);
-            creatures_temp->push_back(creature);
-        }
-        i.close();
-        creatures = creatures_temp;
-    }
-
-    void load_evolutions(){
-        auto* evolutions_temp = new vector<const evolution_meta_t*>;
-        std::ifstream i(evolutions_file_name);
-        while (!i.eof()){
-            auto creature = new evolution_meta_t;
-
-            i >> creature->creature_id;
-            i >> creature->level;
-
-            i >> creature->strength;
-            i >> creature->max_health;
-            i >> creature->agility;
-
-            i >> creature->bounty_exp;
-            i >> creature->required_exp;
-
-            i >> creature->skill_type;
-            i >> creature->skill_power;
-
-            string evolution_name;
-            i >> evolution_name;
-            creature->name = evolution_name;
-
-            evolutions_temp->push_back(creature);
-        }
-        i.close();
-        evolutions = evolutions_temp;
-    }
-
-
     const evolution_meta_t* find_default_evolution_for_creature(const creature_meta_t* creature_metadata) {
         for (auto evolution : *evolutions){
             if(evolution->creature_id != creature_metadata->id) continue;
@@ -261,6 +224,72 @@ namespace data_importing{
         return creatures->at(random_creature_metadata_id);
     }
 
+
+    namespace internal
+    {
+        void load_difficulties() {
+            auto* difficulties_temp = new vector<const difficulty_t*>;
+            std::ifstream i(difficulties_file_name);
+            while (!i.eof()){
+                auto difficulty = new difficulty_t;
+                i >> difficulty->name;
+                i >> difficulty->out_dmg_mul;
+                i >> difficulty->in_dmg_mul;
+                i >> difficulty->enemy_count;
+                i >> difficulty->player_count;
+                difficulties_temp->push_back(difficulty);
+            }
+            i.close();
+            difficulties = difficulties_temp;
+        }
+
+        void load_creatures() {
+            auto* creatures_temp = new vector<const creature_meta_t*>;
+            std::ifstream i(creatures_file_name);
+            while (!i.eof()){
+                auto creature = new creature_meta_t;
+                i >> creature->id;
+                i >> creature->name;
+
+                string element_name;
+                i >> element_name;
+                creature->element = get_element_by_name(element_name);
+                creatures_temp->push_back(creature);
+            }
+            i.close();
+            creatures = creatures_temp;
+        }
+
+        void load_evolutions(){
+            auto* evolutions_temp = new vector<const evolution_meta_t*>;
+            std::ifstream i(evolutions_file_name);
+            while (!i.eof()){
+                auto creature = new evolution_meta_t;
+
+                i >> creature->creature_id;
+                i >> creature->level;
+
+                i >> creature->strength;
+                i >> creature->max_health;
+                i >> creature->agility;
+
+                i >> creature->bounty_exp;
+                i >> creature->required_exp;
+
+                i >> creature->skill_type;
+                i >> creature->skill_power;
+
+                string evolution_name;
+                i >> evolution_name;
+                creature->name = evolution_name;
+
+                evolutions_temp->push_back(creature);
+            }
+            i.close();
+            evolutions = evolutions_temp;
+        }
+    }
+    using namespace data_importing::internal;
 
     /// Loads game metadata from files. Exceptions are not handled.
     void import_data(){
@@ -283,214 +312,219 @@ namespace logic{
     using namespace data_model;
     using namespace data_importing;
     using namespace maths2;
+    using namespace events;
 
-    class creature_t : public creature_i{
-    private:
-        float m_health;
-        float m_exp;
-        const creature_meta_t* m_creature_meta;
-        const evolution_meta_t* m_evolution_meta;
 
-    public:
-        /// Creates new instance of given type of creature.
-        /// @param health Initial health.
-        /// @param creature_metadata Metadata of creature type. (Not disposed)
-        /// @param evolution_metadata Metadata of initial creature evolution. (Not disposed)
-        creature_t(const creature_meta_t *creature_metadata, const evolution_meta_t *evolution_metadata, float health, float exp) :
-                m_health(health), m_creature_meta(creature_metadata), m_evolution_meta(evolution_metadata), m_exp(exp) {}
+    event<damage_i> on_damage;
+    event<creature_i*> on_death;
 
-        float get_health() override { return m_health; }
-        float get_exp() override { return m_exp; }
-        bool is_alive() override { return m_health > 0; }
-        const evolution_meta_t* get_evolution() override { return m_evolution_meta; }
-        const creature_meta_t* get_creature() override { return m_creature_meta; }
+    namespace internal
+    {
+        class creature_t : public creature_i{
+        private:
+            float m_health;
+            float m_exp;
+            const creature_meta_t* m_creature_meta;
+            const evolution_meta_t* m_evolution_meta;
 
-        void evolute() {
-            if(!can_evolute())
+        public:
+            /// Creates new instance of given type of creature.
+            /// @param health Initial health.
+            /// @param creature_metadata Metadata of creature type. (Not disposed)
+            /// @param evolution_metadata Metadata of initial creature evolution. (Not disposed)
+            creature_t(const creature_meta_t *creature_metadata, const evolution_meta_t *evolution_metadata, float health, float exp) :
+                    m_health(health), m_creature_meta(creature_metadata), m_evolution_meta(evolution_metadata), m_exp(exp) {}
+
+            float get_health() override { return m_health; }
+            float get_exp() override { return m_exp; }
+            bool is_alive() override { return m_health > 0; }
+            const evolution_meta_t* get_evolution() override { return m_evolution_meta; }
+            const creature_meta_t* get_creature() override { return m_creature_meta; }
+
+            void evolute() {
+                if(!can_evolute())
+                {
+                    cout << "INTERNAL ERROR: Can not evolute the creature!" << std::endl;
+                    return;
+                }
+                m_evolution_meta = m_evolution_meta->next_evolution;
+
+                auto missing_hp = m_evolution_meta->max_health - m_health;
+                m_health = m_evolution_meta->max_health - missing_hp / 2.0f;
+            }
+
+            void damage_anonymously(float p) {
+                m_health -= abs(p);
+                m_health = clamp(m_health, 0, get_evolution()->max_health);
+            }
+
+
+            void give_exp(float p) {
+                m_exp -= abs(p);
+                m_exp = clamp(p, 0, get_evolution()->required_exp);
+            }
+        };
+
+
+
+        class team_t : public team_i{
+        private:
+            int m_selection_index;
+            vector<creature_t*> m_creatures;
+
+
+        public:
+            /// Creates team based on player picks.
+            /// @param picks Player picks. (Not disposed.)
+            explicit team_t(const vector<const creature_meta_t*>* picks) {
+                m_selection_index = 0;
+                m_creatures = vector<creature_t*>();
+                for (auto pick : *picks) {
+                    append_team(pick);
+                }
+            }
+
+            /// Creates team of random creatures and of given size.
+            /// @param team_size Number of created creatures.
+            explicit team_t(size_t team_size) {
+                m_selection_index = 0;
+                m_creatures = vector<creature_t*>();
+                for (int i = 0; i < team_size; ++i) {
+                    auto pick = find_random_creature_metadata();
+                    append_team(pick);
+                }
+            }
+
+            size_t get_creature_count() override { return m_creatures.size(); }
+            creature_i* get_creature(int index) override { return m_creatures.at(index); }
+            creature_i* get_selected_creature() override { return m_creatures.at(m_selection_index); }
+
+            creature_t* get_creature_mutable(int index) { return m_creatures.at(index); }
+            creature_t* get_selected_creature_mutable() { return m_creatures.at(m_selection_index); }
+            void set_selected_creature(int index) { m_selection_index = index; }
+
+            bool is_defeated() override {
+                for (auto creature : m_creatures) {
+                    if(creature->is_alive()) return false;
+                }
+                return true;
+            }
+
+            bool is_creature_selectable(int index) override { return m_creatures.at(index)->is_alive(); }
+
+        private:
+            void append_team(const creature_meta_t *pick) {
+                auto evolution = find_default_evolution_for_creature(pick);
+                if(evolution == nullptr){
+                    cout << "INTERNAL ERROR: Creature " + pick->name + " has not init evolution!" << endl;
+                }
+                m_creatures.push_back(new creature_t(pick, evolution, evolution->max_health, 0));
+            }
+        };
+
+
+
+        class game_status_t : public game_status_i{
+        private:
+            bool m_is_player_turn;
+            int m_turn_index;
+            team_t* m_player_team;
+            vector<team_t*>* m_enemy_teams;
+
+        public:
+
+            int get_turn_index() override { return m_turn_index; }
+            bool is_player_turn() override { return m_is_player_turn; }
+
+            size_t get_enemy_teams_count() override{ return m_enemy_teams->size(); }
+            team_i* get_player_team() override { return m_player_team; }
+            team_i* get_enemy_team(int index) override{ return m_enemy_teams->at(index); }
+            team_t* get_player_team_mutable() { return m_player_team; }
+            team_t* get_enemy_team_mutable(int index){ return m_enemy_teams->at(index); }
+
+            /// Creates new game based on initial values.
+            /// @param player_picks Picks of the player. (Not disposed.)
+            /// @param difficulty Difficulty of the game. (Not disposed.)
+            game_status_t(
+                    const vector<const struct creature_meta_t*>* player_picks,
+                    const difficulty_t* difficulty)
             {
-                cout << "INTERNAL ERROR: Can not evolute the creature!" << std::endl;
-                return;
-            }
-            m_evolution_meta = m_evolution_meta->next_evolution;
+                m_is_player_turn = true;
+                m_turn_index = 0;
 
-            auto missing_hp = m_evolution_meta->max_health - m_health;
-            m_health = m_evolution_meta->max_health - missing_hp / 2.0f;
-        }
+                m_player_team = new team_t(player_picks);
 
-        void damage_anonymously(float p) {
-            m_health -= abs(p);
-            m_health = clamp(m_health, 0, get_evolution()->max_health);
-        }
+                m_enemy_teams = new vector<team_t*>();
 
-
-        void give_exp(float p) {
-            m_exp -= abs(p);
-            m_exp = clamp(p, 0, get_evolution()->required_exp);
-        }
-    };
-
-
-
-    class team_t : public team_i{
-    private:
-        int m_selection_index;
-        vector<creature_t*> m_creatures;
-
-
-    public:
-        /// Creates team based on player picks.
-        /// @param picks Player picks. (Not disposed.)
-        explicit team_t(const vector<const creature_meta_t*>* picks) {
-            m_selection_index = 0;
-            m_creatures = vector<creature_t*>();
-            for (auto pick : *picks) {
-                append_team(pick);
-            }
-        }
-
-        /// Creates team of random creatures and of given size.
-        /// @param team_size Number of created creatures.
-        explicit team_t(size_t team_size) {
-            m_selection_index = 0;
-            m_creatures = vector<creature_t*>();
-            for (int i = 0; i < team_size; ++i) {
-                auto pick = find_random_creature_metadata();
-                append_team(pick);
-            }
-        }
-
-        size_t get_creature_count() override { return m_creatures.size(); }
-        creature_i* get_creature(int index) override { return m_creatures.at(index); }
-        creature_i* get_selected_creature() override { return m_creatures.at(m_selection_index); }
-
-        creature_t* get_creature_mutable(int index) { return m_creatures.at(index); }
-        creature_t* get_selected_creature_mutable() { return m_creatures.at(m_selection_index); }
-        void set_selected_creature(int index) { m_selection_index = index; }
-
-        bool is_defeated() override {
-            for (auto creature : m_creatures) {
-                if(creature->is_alive()) return false;
-            }
-            return true;
-        }
-
-        bool is_creature_selectable(int index) override { return m_creatures.at(index)->is_alive(); }
-
-    private:
-        void append_team(const creature_meta_t *pick) {
-            auto evolution = find_default_evolution_for_creature(pick);
-            if(evolution == nullptr){
-                cout << "INTERNAL ERROR: Creature " + pick->name + " has not init evolution!" << endl;
-            }
-            m_creatures.push_back(new creature_t(pick, evolution, evolution->max_health, 0));
-        }
-    };
-
-
-
-    class game_status_t : public game_status_i{
-    private:
-        bool m_is_player_turn;
-        int m_turn_index;
-        team_t* m_player_team;
-        vector<team_t*>* m_enemy_teams;
-
-    public:
-
-        int get_turn_index() override { return m_turn_index; }
-        bool is_player_turn() override { return m_is_player_turn; }
-
-        size_t get_enemy_teams_count() override{ return m_enemy_teams->size(); }
-        team_i* get_player_team() override { return m_player_team; }
-        team_i* get_enemy_team(int index) override{ return m_enemy_teams->at(index); }
-        team_t* get_player_team_mutable() { return m_player_team; }
-        team_t* get_enemy_team_mutable(int index){ return m_enemy_teams->at(index); }
-
-        /// Creates new game based on initial values.
-        /// @param player_picks Picks of the player. (Not disposed.)
-        /// @param difficulty Difficulty of the game. (Not disposed.)
-        game_status_t(
-                const vector<const struct creature_meta_t*>* player_picks,
-                const difficulty_t* difficulty)
-        {
-            m_is_player_turn = true;
-            m_turn_index = 0;
-
-            m_player_team = new team_t(player_picks);
-
-            m_enemy_teams = new vector<team_t*>();
-
-            for (int i = 0; i < difficulty->enemy_count; ++i) {
-                auto new_enemy_team = new team_t(difficulty->player_count + i);
-                m_enemy_teams->push_back(new_enemy_team);
-            }
-        }
-
-
-        bool can_make_turn_select_any_creature(bool player_team) override{
-            int available_creatures = 0;
-            for (int i = 0; i < get_team(player_team)->get_creature_count(); ++i) {
-                if(can_make_turn_select_creature(player_team, i))
-                    available_creatures++;
-            }
-            return available_creatures > 1;
-        }
-        bool can_make_turn_select_creature(bool player_team, int selection_index) override {
-            return get_team(player_team)->is_creature_selectable(selection_index);
-        }
-        bool can_make_turn_evolute(bool player_team) override {
-            return get_team(player_team)->get_selected_creature()->can_evolute();
-        }
-        bool can_make_turn_use_attack(bool player_team) override {
-            return get_team(player_team)->get_selected_creature()->is_alive();
-        }
-        bool can_make_turn_use_skill(bool player_team) override {
-            return
-                    get_team(player_team)->get_selected_creature()->is_alive() &&
-                    get_team(player_team)->get_selected_creature()->get_evolution()->skill_type > 0;
-        }
-
-        void make_turn_select_creature(bool player_team, int selection_index) override {
-            get_enemy_team_mutable(player_team)->set_selected_creature(selection_index);
-        }
-        void make_turn_evolute(bool player_team) override {
-            get_enemy_team_mutable(player_team)->get_selected_creature_mutable()->evolute();
-        }
-        void make_turn_use_attack(bool player_team) override {
-            auto target = get_team(!player_team)->get_selected_creature_mutable();
-            auto attacker = get_team(player_team)->get_selected_creature_mutable();
-
-            damage(attacker, target, attacker->get_evolution()->strength);
-        }
-        void make_turn_use_skill(bool player_team) override {
-            auto target = get_team(!player_team)->get_selected_creature_mutable();
-            auto attacker = get_team(!player_team)->get_selected_creature_mutable();
-
-            //TODO Skill attack
-            damage(attacker, target, attacker->get_evolution()->skill_power);
-        }
-
-        void swap_turns() override{ m_is_player_turn = !m_is_player_turn; }
-
-    private:
-        team_t* get_team(bool player_team){
-            return player_team ? m_player_team : m_enemy_teams->at(0);
-        }
-
-        static void damage(creature_t* attacker, creature_t* target, float value){
-            target->damage_anonymously(value);
-
-            if(!target->is_alive()){
-                attacker->give_exp(target->get_evolution()->bounty_exp);
+                for (int i = 0; i < difficulty->enemy_count; ++i) {
+                    auto new_enemy_team = new team_t(difficulty->player_count + i);
+                    m_enemy_teams->push_back(new_enemy_team);
+                }
             }
 
 
-            // show_creature_damaging(attacker, target, value); //TODO
-        }
-    };
+            bool can_make_turn_select_any_creature(bool player_team) override{
+                int available_creatures = 0;
+                for (int i = 0; i < get_team(player_team)->get_creature_count(); ++i) {
+                    if(can_make_turn_select_creature(player_team, i))
+                        available_creatures++;
+                }
+                return available_creatures > 1;
+            }
+            bool can_make_turn_select_creature(bool player_team, int selection_index) override {
+                return get_team(player_team)->is_creature_selectable(selection_index);
+            }
+            bool can_make_turn_evolute(bool player_team) override {
+                return get_team(player_team)->get_selected_creature()->can_evolute();
+            }
+            bool can_make_turn_use_attack(bool player_team) override {
+                return get_team(player_team)->get_selected_creature()->is_alive();
+            }
+            bool can_make_turn_use_skill(bool player_team) override {
+                return
+                        get_team(player_team)->get_selected_creature()->is_alive() &&
+                        get_team(player_team)->get_selected_creature()->get_evolution()->skill_type > 0;
+            }
 
+            void make_turn_select_creature(bool player_team, int selection_index) override {
+                get_enemy_team_mutable(player_team)->set_selected_creature(selection_index);
+            }
+            void make_turn_evolute(bool player_team) override {
+                get_enemy_team_mutable(player_team)->get_selected_creature_mutable()->evolute();
+            }
+            void make_turn_use_attack(bool player_team) override {
+                auto target = get_team(!player_team)->get_selected_creature_mutable();
+                auto attacker = get_team(player_team)->get_selected_creature_mutable();
 
+                damage(attacker, target, attacker->get_evolution()->strength);
+            }
+            void make_turn_use_skill(bool player_team) override {
+                auto target = get_team(!player_team)->get_selected_creature_mutable();
+                auto attacker = get_team(!player_team)->get_selected_creature_mutable();
 
+                //TODO Skill attack
+                damage(attacker, target, attacker->get_evolution()->skill_power);
+            }
+
+            void swap_turns() override{ m_is_player_turn = !m_is_player_turn; }
+
+        private:
+            team_t* get_team(bool player_team){
+                return player_team ? m_player_team : m_enemy_teams->at(0);
+            }
+
+            static void damage(creature_t* attacker, creature_t* target, float value){
+                target->damage_anonymously(value);
+
+                if(!target->is_alive()){
+                    attacker->give_exp(target->get_evolution()->bounty_exp);
+                }
+
+                on_damage.invoke({attacker, target, value});
+            }
+        };
+    }
+    using namespace logic::internal;
 
     game_status_i* start_new_game(const vector<const creature_meta_t*>* player_picks, const difficulty_t* difficulty) {
         return new game_status_t(player_picks, difficulty);
@@ -644,11 +678,11 @@ namespace view{
         cout << endl << endl << endl;
     }
 
-    void show_creature_damaging(creature_i *attacker, creature_i *target, float value) {
+    void show_creature_damaging(const damage_i& dmg_i) {
         cout
-                << attacker->get_creature()->name << " has attacked "
-                << target->get_evolution()->name << " for "
-                << value << "damage." << endl;
+                << dmg_i.attacker->get_creature()->name << " has attacked "
+                << dmg_i.target->get_evolution()->name << " for "
+                << dmg_i.value << " HP." << endl;
     }
 }
 
@@ -822,6 +856,11 @@ int main() {
     using namespace view;
     using namespace controller;
     using namespace ai;
+
+
+    on_damage.subscribe([=](damage_i dmg_i){
+        show_creature_damaging(dmg_i);
+    });
 
 
     import_data();
