@@ -26,6 +26,14 @@ namespace maths2{
         if(t < min) return min;
         return t;
     }
+
+    /// Prepares a number to be displayed to user.
+    /// @param x Original value.
+    /// @return Human-friendly value.
+    float display_float(float x){
+        if(x <= 0.1f && x > 0.0f) return 0.1f;
+        return round(x * 10) / 10;
+    }
 }
 
 
@@ -46,7 +54,7 @@ namespace events{
         /// Invokes all listeners.
         /// @param args Argument passed to all listeners.
         void invoke(args_t args){
-            for (auto listener : listeners) {
+            for (const auto& listener : listeners) {
                 listener(args);
             }
         }
@@ -193,6 +201,13 @@ namespace data_model{
         creature_i* selected;
         bool is_player_team;
     };
+
+
+    struct element_interaction_i{
+        const element attacker;
+        const element target;
+        const float multiplier;
+    };
 }
 
 
@@ -203,10 +218,13 @@ namespace data_importing{
     const vector<const difficulty_t*>* difficulties;
     const vector<const creature_meta_t*>* creatures;
     const vector<const evolution_meta_t*>* evolutions;
+    const vector<const element_interaction_i*>* element_interactions;
 
     const char* difficulties_file_name = "Difficulties.txt";
     const char* evolutions_file_name = "Evolutions.txt";
     const char* creatures_file_name = "Creatures.txt";
+    constexpr float element_interaction_damage_mul_buff = 1.5f;
+    constexpr float element_interaction_damage_mul_nerf = 1.0f / element_interaction_damage_mul_buff;
 
     const char* element_names[] {
             "Water", "Earth", "Air",
@@ -237,6 +255,15 @@ namespace data_importing{
     const creature_meta_t* find_random_creature_metadata(){
         auto random_creature_metadata_id = rand() % creatures->size();
         return creatures->at(random_creature_metadata_id);
+    }
+
+    float find_element_damage_mul(element attacker, element target){
+        for(auto element_interaction : *element_interactions){
+            if(attacker != element_interaction->attacker) continue;
+            if(target != element_interaction->target) continue;
+            return element_interaction->multiplier;
+        }
+        return 1.0f;
     }
 
 
@@ -315,19 +342,58 @@ namespace data_importing{
             i.close();
             evolutions = evolutions_temp;
         }
+
+
+        void load_element_interactions(){
+            auto nerf = element_interaction_damage_mul_nerf;
+            auto buff = element_interaction_damage_mul_buff;
+
+            element_interactions = new vector<const element_interaction_i*>{
+                new element_interaction_i{ water, water, nerf },
+                new element_interaction_i{ water, earth, buff },
+                new element_interaction_i{ water, fire, buff },
+
+                new element_interaction_i{ earth, air, nerf },
+                new element_interaction_i{ earth, fire, buff },
+                new element_interaction_i{ earth, ice, buff },
+                new element_interaction_i{ earth, metal, buff},
+
+                new element_interaction_i{ air, earth, nerf },
+                new element_interaction_i{ air, ice, buff },
+                new element_interaction_i{ air, metal, buff },
+
+                new element_interaction_i{ fire, water, nerf },
+                new element_interaction_i{ fire, earth, buff },
+                new element_interaction_i{ fire, ice, buff },
+                new element_interaction_i{ fire, metal, nerf },
+
+                new element_interaction_i{ ice, water, nerf },
+                new element_interaction_i{ ice, earth, buff },
+                new element_interaction_i{ ice, fire, nerf },
+                new element_interaction_i{ ice, ice, nerf },
+
+                new element_interaction_i{ metal, water, buff },
+                new element_interaction_i{ metal, air, buff },
+                new element_interaction_i{ metal, fire, nerf },
+                new element_interaction_i{ metal, metal, nerf },
+            };
+        }
     }
     using namespace data_importing::internal;
 
-    /// Loads game metadata from files. Exceptions are not handled.
+    /// Loads game metadata from files or hard-coded data. Exceptions are not handled.
     void import_data(){
         cout << "Loading difficulties";
         load_difficulties();
 
-        cout << ", m_creatures";
+        cout << ", creatures";
         load_creatures();
 
         cout << ", evolutions";
         load_evolutions();
+
+        cout << ", element interactions";
+        load_element_interactions();
 
         cout << " - OK." << endl;
     }
@@ -343,7 +409,7 @@ namespace logic{
 
     /// Event invoked after damaging a creature by a different creature.
     event<damage_i> on_damage;
-    /// Event invoked after dealing enough damage to declare a creature dead.
+    /// Event invoked after dealing enough damage_default_attack to declare a creature dead.
     event<creature_i*> on_death;
     /// Event invoked after a selection.
     event<selection_i> on_selection;
@@ -534,14 +600,14 @@ namespace logic{
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
                 auto attacker = get_team(player_team)->get_selected_creature_mutable();
 
-                damage(attacker, target, attacker->get_evolution()->strength);
+                damage_default_attack(attacker, target);
             }
             void make_turn_use_skill(bool player_team) override {
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
                 auto attacker = get_team(!player_team)->get_selected_creature_mutable();
 
                 //TODO Skill attack
-                damage(attacker, target, attacker->get_evolution()->skill_power);
+                damage_default_attack(attacker, target);
             }
 
             void swap_turns() override{ m_is_player_turn = !m_is_player_turn; }
@@ -551,9 +617,16 @@ namespace logic{
                 return player_team ? m_player_team : m_enemy_teams->at(0);
             }
 
-            static void damage(creature_t* attacker, creature_t* target, float value){
-                target->damage_anonymously(value);
-                on_damage.invoke({attacker, target, value});
+            static void damage_default_attack(creature_t* attacker, creature_t* target){
+                const float power = attacker->get_evolution()->strength;
+                const float element_mul = find_element_damage_mul(
+                        attacker->get_creature()->element,
+                        target->get_creature()->element);
+
+                const float result_dmg = power * element_mul;
+
+                target->damage_anonymously(result_dmg);
+                on_damage.invoke({attacker, target, result_dmg});
 
                 if(!target->is_alive()){
                     attacker->give_exp(target->get_evolution()->bounty_exp);
@@ -707,12 +780,12 @@ namespace view{
                 cout << "\t\t";
             }
             else{
-                cout << creature->get_health() << "/" << creature->get_evolution()->max_health << " HP ";
+                cout << maths2::display_float(creature->get_health()) << "/" << maths2::display_float(creature->get_evolution()->max_health) << " HP ";
                 show_bar(creature->get_health(), creature->get_evolution()->max_health, health_display_unit, '=');
                 cout << "\t\t\t\t";
             }
 
-            cout << creature->get_exp() << "/" << creature->get_evolution()->required_exp << " EXP ";
+            cout << maths2::display_float(creature->get_exp()) << "/" << maths2::display_float(creature->get_evolution()->required_exp) << " EXP ";
             show_bar(creature->get_exp(), creature->get_evolution()->required_exp, health_display_unit, '*');
             cout << endl;
         }
@@ -731,11 +804,22 @@ namespace view{
         cout
                 << dmg_i.attacker->get_creature()->name << " has attacked "
                 << dmg_i.target->get_creature()->name << " for "
-                << dmg_i.value << " HP." << endl;
+                << maths2::display_float(dmg_i.value) << " HP." << endl;
     }
 
     void show_creature_death(creature_i* corpse){
         cout << corpse->get_creature()->name << " has died!" << endl;
+    }
+
+    void show_selection(selection_i selection){
+        cout
+        << (selection.is_player_team ? "Player" : "Bot" )
+        << " has selected " << selection.selected->get_creature()->name
+        << " (" << selection.index << ")" << endl;
+    }
+
+    void show_evolution(creature_i* creature){
+        cout << creature->get_creature()->name << " has evolved into " << creature->get_evolution()->name << endl;
     }
 }
 
@@ -911,16 +995,8 @@ int main() {
 
     on_damage.subscribe(show_creature_damaging);
     on_death.subscribe(show_creature_death);
-    on_selection.subscribe([=](selection_i selection){
-       cout
-           << (selection.is_player_team ? "Player" : "Bot" )
-           << " has selected " << selection.selected->get_creature()->name
-           << " (" << selection.index << ")" << endl;
-    });
-    on_evolution.subscribe([=](creature_i* creature){
-        cout << creature->get_creature()->name << " has evolved into " << creature->get_evolution()->name << endl;
-    });
-
+    on_selection.subscribe(show_selection);
+    on_evolution.subscribe(show_evolution);
 
     import_data();
 
