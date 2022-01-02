@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <random>
 
 using std::string;
 using std::cout;
@@ -33,6 +34,35 @@ namespace maths2{
     float display_float(float x){
         if(x <= 0.1f && x > 0.0f) return 0.1f;
         return round(x * 10) / 10;
+    }
+}
+
+
+
+namespace rng{
+    using std::random_device;
+    using std::default_random_engine;
+    using std::uniform_real_distribution;
+
+    namespace internal{
+        random_device* rd2;
+        default_random_engine* random_engine;
+        uniform_real_distribution<float>* default_distribution;
+    }
+
+    using namespace rng::internal;
+
+    void init_module_rng(){
+        rd2 = new random_device();
+        random_engine = new default_random_engine((*rd2)());
+        default_distribution = new uniform_real_distribution(0.0f, 1.0f);
+
+        cout << "RNG initialized." << endl;
+    }
+
+    float next_random_float_01(){
+        return default_distribution->operator()(*random_engine);
+        // return (*default_distribution)(*random_engine);
     }
 }
 
@@ -382,7 +412,7 @@ namespace data_importing{
     using namespace data_importing::internal;
 
     /// Loads game metadata from files or hard-coded data. Exceptions are not handled.
-    void import_data(){
+    void init_module_importing_data(){
         cout << "Loading difficulties";
         load_difficulties();
 
@@ -405,6 +435,7 @@ namespace logic{
     using namespace data_model;
     using namespace data_importing;
     using namespace maths2;
+    using namespace rng;
     using namespace events;
 
     /// Event invoked after damaging a creature by a different creature.
@@ -604,7 +635,7 @@ namespace logic{
             }
             void make_turn_use_skill(bool player_team) override {
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
-                auto attacker = get_team(!player_team)->get_selected_creature_mutable();
+                auto attacker = get_team(player_team)->get_selected_creature_mutable();
 
                 //TODO Skill attack
                 damage_default_attack(attacker, target);
@@ -623,7 +654,11 @@ namespace logic{
                         attacker->get_creature()->element,
                         target->get_creature()->element);
 
-                const float result_dmg = power * element_mul;
+                float result_dmg = power * element_mul;
+
+                const float miss_possibility = 1 - (target->get_evolution()->agility / 100.0f);
+                if(rng::next_random_float_01() > miss_possibility)
+                    result_dmg = 0;
 
                 target->damage_anonymously(result_dmg);
                 on_damage.invoke({attacker, target, result_dmg});
@@ -801,10 +836,16 @@ namespace view{
     }
 
     void show_creature_damaging(const damage_i& dmg_i) {
-        cout
+        if(dmg_i.value > 0)
+            cout
                 << dmg_i.attacker->get_creature()->name << " has attacked "
                 << dmg_i.target->get_creature()->name << " for "
                 << maths2::display_float(dmg_i.value) << " HP." << endl;
+        else
+            cout
+                << dmg_i.target->get_creature()->name <<  " has dodged the attack of "
+                << dmg_i.attacker->get_creature()->name << ". (Probability "
+                << dmg_i.target->get_evolution()->agility << "%)" << endl;
     }
 
     void show_creature_death(creature_i* corpse){
@@ -820,6 +861,18 @@ namespace view{
 
     void show_evolution(creature_i* creature){
         cout << creature->get_creature()->name << " has evolved into " << creature->get_evolution()->name << endl;
+    }
+
+    void show_winner(bool player_team){
+        cout << endl << "=== === ===" << endl;
+
+        if(player_team){
+            cout << "PLAYER WINS!" << endl;
+        }else{
+            cout << "COMPUTER WINS!" << endl;
+        }
+
+        cout << "=== === ===" << endl << endl;
     }
 }
 
@@ -991,6 +1044,7 @@ int main() {
     using namespace view;
     using namespace controller;
     using namespace ai;
+    using namespace rng;
 
 
     on_damage.subscribe(show_creature_damaging);
@@ -998,7 +1052,8 @@ int main() {
     on_selection.subscribe(show_selection);
     on_evolution.subscribe(show_evolution);
 
-    import_data();
+    init_module_rng();
+    init_module_importing_data();
 
     auto game = init_new_game();
     show_game_start_prompt();
@@ -1045,4 +1100,6 @@ int main() {
         game->swap_turns();
     }
     while (!game->is_game_over());
+
+    show_winner(!game->get_player_team()->is_defeated());
 }
