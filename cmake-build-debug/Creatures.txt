@@ -1,0 +1,4 @@
+0	Tank	Metal
+1	Satellite	Air
+2	Wind	Ait
+3	Digger	Earth

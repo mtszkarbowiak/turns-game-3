@@ -341,10 +341,14 @@ namespace logic{
     using namespace maths2;
     using namespace events;
 
-
+    /// Event invoked after damaging a creature by a different creature.
     event<damage_i> on_damage;
+    /// Event invoked after dealing enough damage to declare a creature dead.
     event<creature_i*> on_death;
+    /// Event invoked after a selection.
     event<selection_i> on_selection;
+    /// Event invoked after an evolution.
+    event<creature_i*> on_evolution;
 
 
     namespace internal
@@ -522,7 +526,9 @@ namespace logic{
                 on_selection.invoke({selection_index, get_team(player_team)->get_selected_creature(), player_team});
             }
             void make_turn_evolute(bool player_team) override {
-                get_team(player_team)->get_selected_creature_mutable()->evolute();
+                creature_t* creature = get_team(player_team)->get_selected_creature_mutable();
+                creature->evolute();
+                on_evolution.invoke(creature);
             }
             void make_turn_use_attack(bool player_team) override {
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
@@ -680,7 +686,7 @@ namespace view{
     }
 
     void show_team_status2(team_i* team, bool player_team) {
-            cout  << endl<< (player_team ? "---* YOUR TEAM *---" : "---* ENEMY TEAM *---") << endl;
+        cout << endl<< (player_team ? "---* YOUR TEAM *---" : "---* ENEMY TEAM *---") << endl;
 
         for (int i = 0; i < team->get_creature_count(); ++i) {
             auto creature = team->get_creature(i);
@@ -910,6 +916,9 @@ int main() {
            << (selection.is_player_team ? "Player" : "Bot" )
            << " has selected " << selection.selected->get_creature()->name
            << " (" << selection.index << ")" << endl;
+    });
+    on_evolution.subscribe([=](creature_i* creature){
+        cout << creature->get_creature()->name << " has evolved into " << creature->get_evolution()->name << endl;
     });
 
 
