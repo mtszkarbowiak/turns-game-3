@@ -84,7 +84,7 @@ namespace data_model{
         int skill_type;
         float skill_power;
 
-        evolution_meta_t* next_evolution;
+        const evolution_meta_t* next_evolution;
     };
 
     struct creature_meta_t{
@@ -275,30 +275,42 @@ namespace data_importing{
             creatures = creatures_temp;
         }
 
+
+        const evolution_meta_t* find_next_evolution(const vector<const evolution_meta_t*>* src, const evolution_meta_t* base){
+            for(auto evolution : *src){
+                if(evolution->creature_id != base->creature_id) continue;
+                if(evolution->level != base->level + 1) continue;
+                return evolution;
+            }
+            return nullptr;
+        }
+
         void load_evolutions(){
             auto* evolutions_temp = new vector<const evolution_meta_t*>;
             std::ifstream i(evolutions_file_name);
             while (!i.eof()){
-                auto creature = new evolution_meta_t;
+                auto evolution = new evolution_meta_t;
 
-                i >> creature->creature_id;
-                i >> creature->level;
+                i >> evolution->creature_id;
+                i >> evolution->level;
 
-                i >> creature->strength;
-                i >> creature->max_health;
-                i >> creature->agility;
+                i >> evolution->strength;
+                i >> evolution->max_health;
+                i >> evolution->agility;
 
-                i >> creature->bounty_exp;
-                i >> creature->required_exp;
+                i >> evolution->bounty_exp;
+                i >> evolution->required_exp;
 
-                i >> creature->skill_type;
-                i >> creature->skill_power;
+                i >> evolution->skill_type;
+                i >> evolution->skill_power;
 
                 string evolution_name;
                 i >> evolution_name;
-                creature->name = evolution_name;
+                evolution->name = evolution_name;
 
-                evolutions_temp->push_back(creature);
+                evolution->next_evolution = find_next_evolution(evolutions_temp, evolution);
+
+                evolutions_temp->push_back(evolution);
             }
             i.close();
             evolutions = evolutions_temp;
@@ -557,18 +569,22 @@ namespace ai{
     using namespace data_model;
 
     player_action get_enemy_action(game_status_i* game_status){
-        int randomizer = rand() % 10;
+        player_action result = player_action_none;
 
-        if(game_status->can_make_turn_use_attack(false) && randomizer > 3)
-            return player_action_attack;
-        if(game_status->can_make_turn_use_skill(false) && randomizer > 5)
-            return player_action_skill_use;
-        if(game_status->can_make_turn_evolute(false) && randomizer > 7)
-            return player_action_evolution;
-        if(game_status->can_make_turn_select_any_creature(false))
-            return player_action_creature_reselection;
+        while (result == player_action_none){
+            int randomizer = rand() % 10;
 
-        return get_enemy_action(game_status);
+            if(game_status->can_make_turn_use_attack(false) && randomizer < 4)
+                result = player_action_attack;
+            else if(game_status->can_make_turn_use_skill(false) && randomizer < 6)
+                result = player_action_skill_use;
+            else if(game_status->can_make_turn_evolute(false) && randomizer < 8)
+                result = player_action_evolution;
+            else if(game_status->can_make_turn_select_any_creature(false))
+                result = player_action_creature_reselection;
+        }
+
+        return result;
     }
 
     int get_enemy_selection(game_status_i* game_status) {
@@ -680,13 +696,15 @@ namespace view{
             cout << endl;
 
 
-            if(!team->get_selected_creature()->is_alive())
-                cout << "-- DEAD --";
+            if(!team->get_creature(i)->is_alive()) {
+                cout << "-- DEAD -- ";
+                cout << "\t\t";
+            }
             else{
                 cout << creature->get_health() << "/" << creature->get_evolution()->max_health << " HP ";
                 show_bar(creature->get_health(), creature->get_evolution()->max_health, health_display_unit, '=');
+                cout << "\t\t\t\t";
             }
-            cout << "\t\t\t\t";
 
             cout << creature->get_exp() << "/" << creature->get_evolution()->required_exp << " EXP ";
             show_bar(creature->get_exp(), creature->get_evolution()->required_exp, health_display_unit, '*');
@@ -930,8 +948,8 @@ int main() {
             case player_action_evolution: game->make_turn_evolute(player_team); break;
             case player_action_creature_reselection: {
                 int selection = player_team ?
-                                ask_for_creature_reselection(game->get_player_team()) :
-                                get_enemy_selection(game);
+                    ask_for_creature_reselection(game->get_player_team()) :
+                    get_enemy_selection(game);
                 game->make_turn_select_creature(player_team,selection);
             } break;
             case player_action_none:
