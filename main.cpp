@@ -203,8 +203,8 @@ namespace data_model{
         virtual void make_turn_use_skill(bool player_team) = 0;
 
         virtual bool try_make_obligatory_turn(bool player_team) = 0;
-
         virtual void swap_turns() = 0;
+        virtual bool try_fight_next_enemy() = 0;
     };
 
 
@@ -469,6 +469,8 @@ namespace logic{
     event<creature_i*> on_evolution;
     /// Event invoked whenever some turn is forced.
     event<player_action> on_obligatory_turn;
+    /// Event invoked before passing defeated enemy.
+    event<int> on_enemy_pass;
 
 
     namespace internal
@@ -495,7 +497,7 @@ namespace logic{
             const creature_meta_t* get_creature() override { return m_creature_meta; }
 
             void evolute() {
-                if(!can_evolute())           //TODO Fix evolution mechanic.
+                if(!can_evolute())
                 {
                     cout << "INTERNAL ERROR: Can not evolute the creature!" << std::endl;
                     return;
@@ -513,7 +515,7 @@ namespace logic{
 
 
             void give_exp(float p) {
-                m_exp -= abs(p);
+                m_exp += abs(p);
                 m_exp = clamp(p, 0, get_evolution()->required_exp);
             }
         };
@@ -689,12 +691,26 @@ namespace logic{
                 return false;
             }
 
-
             void swap_turns() override { m_is_player_turn = !m_is_player_turn; }
 
+            bool try_fight_next_enemy() override{
+                if(!get_current_enemy_team()->is_defeated())
+                    throw std::invalid_argument("Fight with next enemy team requires defeating contemporary one.");
+
+                if(get_current_enemy_index() == get_enemy_teams_count() - 1)
+                    return false;
+
+                on_enemy_pass.invoke(m_enemy_index);
+                m_enemy_index++;
+                return true;
+            }
+
         private:
+            /// Gets contemporary team involved in fight.
+            /// @param player_team Informs if the player's team is mentioned.
+            /// @return Pointer to mutable fighting team.
             team_t* get_team(bool player_team){
-                return player_team ? m_player_team : m_enemy_teams->at(0);
+                return player_team ? m_player_team : m_enemy_teams->at(m_enemy_index);
             }
 
             static void damage_default_attack(creature_t* attacker, creature_t* target){
@@ -1136,7 +1152,12 @@ int main() {
     on_selection.subscribe(show_selection);
     on_evolution.subscribe(show_evolution);
     on_obligatory_turn.subscribe([=](player_action){
-        cout << "Obligatory turn." << endl;
+        cout << "(Obligatory turn)" << endl;
+    });
+    on_enemy_pass.subscribe([=](int enemy_index){
+        cout << "--- *** --- *** ---" << endl;
+        cout << "ENEMY No." << enemy_index << " DEFEATED!!!" << endl;
+        cout << "--- *** --- *** ---" << endl << endl;
     });
 
     init_module_rng();
@@ -1156,7 +1177,7 @@ int main() {
 
             if(game->is_player_turn())
             {
-                show_team_status2(game->get_enemy_team(0), false);
+                show_team_status2(game->get_current_enemy_team(), false);
                 show_team_status2(game->get_player_team(), true);
             }
 
@@ -1188,7 +1209,17 @@ int main() {
             game->swap_turns();
         }
         while (!game->is_round_over());
-        show_round_winner(!game->get_player_team()->is_defeated());
+
+        if(game->get_player_team()->is_defeated()){
+            show_round_winner(false);
+            // break; // ???
+        }else{
+            show_round_winner(true);
+            bool exists_next_enemy = game->try_fight_next_enemy();
+
+            if(!exists_next_enemy)
+                break;
+        }
     }
     show_game_winner(!game->get_player_team()->is_defeated());
 }
