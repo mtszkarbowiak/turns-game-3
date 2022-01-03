@@ -780,8 +780,9 @@ namespace logic{
         return nullptr;
     }
 
-    void save_game(const string& save_name, game_status_i* game_status){
+    void save_game(const string& save_name, const game_status_i* game_status){
         //TODO Saving game.
+        cout << save_name << " saved. Unfortunatelly it's only mock :<" << endl;
     }
 }
 
@@ -1186,6 +1187,42 @@ namespace controller{
 
         return start_new_game(player_team, difficulty);
     }
+
+    /// Asks player if saving is required and potentially performs it.
+    /// @param saving_func
+    void ask_for_saving(const function<void(const string&, game_status_i*)>& saving_func, game_status_i* game_status){
+        cout << "Do you want to save the game? (y/n)" << endl;
+
+        bool save;
+
+        char response = '\0';
+        while (response == '\0'){
+            cin >> response;
+            switch (response) {
+                case 'y':{
+                    save = true;
+                }break;
+
+                case 'n':{
+                    save = false;
+                }break;
+
+                default:{
+                    response = '\0';
+                    cout << "Invalid input!" << endl;
+                }break;
+            }
+        }
+
+        if(!save) return;
+
+        cout << "Enter save name:" << endl;
+
+        string save_name;
+        cin >> save_name;
+
+        saving_func(save_name, game_status);
+    }
 }
 
 
@@ -1319,6 +1356,8 @@ void play(game_status_i* game) {
 
             if(!exists_next_enemy)
                 break;
+            else
+                ask_for_saving(save_game, game);
         }
     }
     show_game_winner(!game->get_player_team()->is_defeated());
