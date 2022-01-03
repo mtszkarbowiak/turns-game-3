@@ -1135,18 +1135,19 @@ namespace controller{
 }
 
 
+using namespace data_model;
+using namespace data_importing;
+using namespace logic;
+using namespace view;
+using namespace controller;
+using namespace ai;
+using namespace rng;
+
+
+void play(game_status_i* game);
 
 
 int main() {
-    using namespace data_model;
-    using namespace data_importing;
-    using namespace logic;
-    using namespace view;
-    using namespace controller;
-    using namespace ai;
-    using namespace rng;
-
-
     on_damage.subscribe(show_creature_damaging);
     on_death.subscribe(show_creature_death);
     on_selection.subscribe(show_selection);
@@ -1164,6 +1165,11 @@ int main() {
     init_module_importing_data();
 
     auto game = init_new_game();
+    play(game);
+}
+
+
+void play(game_status_i* game) {
     show_game_start_prompt();
     show_team_status2(game->get_player_team(), true);
 
@@ -1212,7 +1218,6 @@ int main() {
 
         if(game->get_player_team()->is_defeated()){
             show_round_winner(false);
-            // break; // ???
         }else{
             show_round_winner(true);
             bool exists_next_enemy = game->try_fight_next_enemy();
