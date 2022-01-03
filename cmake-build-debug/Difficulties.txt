@@ -1,5 +1,5 @@
 Tutorial	2	0.5	1	1
-Easy	1.25	0.85	4	6
+Easy	1.25	0.85	4	2
 Normal	1.15	0.95	6	6
 Hard	1	1	8	6
-Difficult	0.9	1.2	10	6
+Deadly	0.9	1.2	10	6
