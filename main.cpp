@@ -518,6 +518,10 @@ namespace logic{
                 m_exp += abs(p);
                 m_exp = clamp(p, 0, get_evolution()->required_exp);
             }
+
+            void heal_full(){
+                m_health = get_evolution()->max_health;
+            }
         };
 
 
@@ -702,6 +706,16 @@ namespace logic{
 
                 on_enemy_pass.invoke(m_enemy_index);
                 m_enemy_index++;
+
+                {
+                    auto player_team = get_player_team_mutable();
+                    for (int i = 0; i < player_team->get_creature_count(); ++i) {
+                        auto creature = player_team->get_creature_mutable(i);
+                        creature->heal_full();
+                        creature->give_exp(5);
+                    }
+                }
+
                 return true;
             }
 
@@ -827,6 +841,10 @@ namespace view{
 
     void show_invalid_index_answer_dialog() {
         cout << "Bruh, there is no answer with such index." << endl;
+    }
+
+    void show_not_yet_implemented_dialog(){
+        cout << "Not yet implemented." << endl;
     }
 
     void show_selected_option_dialog(const string& selection) {
@@ -959,6 +977,13 @@ namespace view{
 
         cout << "==*== ==*== ==*==" << endl;
         cout << endl;
+    }
+
+    void show_main_menu(){
+        cout << "===[]==[ MAIN MENU ]==[]===" << endl;
+        cout << "0) New game" << endl;
+        cout << "1) Load game" << endl;
+        cout << "2) Exit" << endl;
     }
 }
 
@@ -1144,10 +1169,52 @@ using namespace ai;
 using namespace rng;
 
 
+void static_init_modules();
+void main_menu();
 void play(game_status_i* game);
 
 
 int main() {
+    static_init_modules();
+
+    main_menu();
+}
+
+
+void main_menu() {
+    bool exit = false;
+
+    show_main_menu();
+    int input = -1;
+
+    while (!exit){
+        cin >> input;
+
+        switch (input) {
+            case 0: {
+                auto game = init_new_game();
+                play(game);
+                show_main_menu();
+            }
+            break;
+
+            case 1: {
+                show_not_yet_implemented_dialog();
+            }break;
+
+            case 2: {
+                exit = true;
+            }break;
+
+            default: {
+                show_invalid_index_answer_dialog();
+            }break;
+        }
+    }
+}
+
+
+void static_init_modules() {
     on_damage.subscribe(show_creature_damaging);
     on_death.subscribe(show_creature_death);
     on_selection.subscribe(show_selection);
@@ -1163,9 +1230,6 @@ int main() {
 
     init_module_rng();
     init_module_importing_data();
-
-    auto game = init_new_game();
-    play(game);
 }
 
 
