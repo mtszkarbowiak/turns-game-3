@@ -575,6 +575,12 @@ namespace logic{
 
             bool is_creature_selectable(int index) override { return m_creatures.at(index)->is_alive(); }
 
+            ~team_t(){
+                for (auto creature : m_creatures) {
+                    delete creature;
+                }
+            }
+
         private:
             void append_team(const creature_meta_t *pick) {
                 auto evolution = find_default_evolution_for_creature(pick);
@@ -722,7 +728,13 @@ namespace logic{
             }
 
             ~game_status_t() override{
-                //TODO Game disposing.
+                for (auto &m_enemy_team : *m_enemy_teams) {
+                    delete m_enemy_team;
+                }
+
+                delete m_enemy_teams;
+                delete m_player_team;
+
                 cout << "Disposing game - OK." << endl;
             }
 
