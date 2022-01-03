@@ -164,9 +164,18 @@ namespace data_model{
         virtual creature_i* get_creature(int index) = 0;
         virtual creature_i* get_selected_creature() = 0;
         virtual bool is_creature_selectable(int index) = 0;
+        int get_selectable_creature_count();
 
         virtual bool is_defeated() = 0;
     };
+
+    int team_i::get_selectable_creature_count() {
+        int result = 0;
+        for (int i = 0; i < get_creature_count(); ++i) {
+            if(get_creature(i)->is_alive()) result++;
+        }
+        return result;
+    }
 
     class game_status_i{
     public:
@@ -175,11 +184,11 @@ namespace data_model{
         virtual team_i* get_player_team() = 0;
         virtual size_t get_enemy_teams_count() = 0;
         virtual team_i* get_enemy_team(int index) = 0;
+        virtual int get_current_enemy_index() = 0;
 
         bool are_all_enemy_teams_defeated();
         bool is_round_over();
         bool is_game_over();
-        int get_current_enemy_index();
         team_i* get_current_enemy_team();
 
         virtual bool can_make_turn_select_any_creature(bool player_team) = 0;
@@ -192,6 +201,8 @@ namespace data_model{
         virtual void make_turn_evolute(bool player_team) = 0;
         virtual void make_turn_use_attack(bool player_team) = 0;
         virtual void make_turn_use_skill(bool player_team) = 0;
+
+        virtual bool try_make_obligatory_turn(bool player_team) = 0;
 
         virtual void swap_turns() = 0;
     };
@@ -208,20 +219,13 @@ namespace data_model{
     }
 
     bool game_status_i::is_round_over() {
-        return get_player_team()->is_defeated() || get_current_enemy_team()->is_defeated();
+        bool player_team_defeated = get_player_team()->is_defeated();
+        bool enemy_team_defeated = get_current_enemy_team()->is_defeated();
+        return player_team_defeated || enemy_team_defeated;
     }
 
     bool game_status_i::is_game_over() {
         return get_player_team()->is_defeated() || are_all_enemy_teams_defeated();
-    }
-
-    int game_status_i::get_current_enemy_index() {
-        for (int i = 0; i < get_enemy_teams_count(); ++i) {
-            auto enemy_team = get_enemy_team(i);
-            if(!enemy_team->is_defeated())
-                return i;
-        }
-        return -1;
     }
 
     team_i *game_status_i::get_current_enemy_team() {
@@ -463,6 +467,8 @@ namespace logic{
     event<selection_i> on_selection;
     /// Event invoked after an evolution.
     event<creature_i*> on_evolution;
+    /// Event invoked whenever some turn is forced.
+    event<player_action> on_obligatory_turn;
 
 
     namespace internal
@@ -577,6 +583,7 @@ namespace logic{
         private:
             bool m_is_player_turn;
             int m_turn_index;
+            int m_enemy_index;
             team_t* m_player_team;
             vector<team_t*>* m_enemy_teams;
 
@@ -590,6 +597,7 @@ namespace logic{
             team_i* get_enemy_team(int index) override{ return m_enemy_teams->at(index); }
             team_t* get_player_team_mutable() { return m_player_team; }
             team_t* get_enemy_team_mutable(int index){ return m_enemy_teams->at(index); }
+            int get_current_enemy_index() override { return m_enemy_index; }
 
             /// Creates new game based on initial values.
             /// @param player_picks Picks of the player. (Not disposed.)
@@ -600,6 +608,7 @@ namespace logic{
             {
                 m_is_player_turn = true;
                 m_turn_index = 0;
+                m_enemy_index = 0;
 
                 m_player_team = new team_t(player_picks);
 
@@ -638,17 +647,20 @@ namespace logic{
             void make_turn_select_creature(bool player_team, int selection_index) override {
                 get_team(player_team)->set_selected_creature(selection_index);
                 on_selection.invoke({selection_index, get_team(player_team)->get_selected_creature(), player_team});
+                m_turn_index++;
             }
             void make_turn_evolute(bool player_team) override {
                 creature_t* creature = get_team(player_team)->get_selected_creature_mutable();
                 creature->evolute();
                 on_evolution.invoke(creature);
+                m_turn_index++;
             }
             void make_turn_use_attack(bool player_team) override {
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
                 auto attacker = get_team(player_team)->get_selected_creature_mutable();
 
                 damage_default_attack(attacker, target);
+                m_turn_index++;
             }
             void make_turn_use_skill(bool player_team) override {
                 auto target = get_team(!player_team)->get_selected_creature_mutable();
@@ -656,9 +668,29 @@ namespace logic{
 
                 //TODO Skill attack
                 damage_default_attack(attacker, target);
+                m_turn_index++;
             }
 
-            void swap_turns() override{ m_is_player_turn = !m_is_player_turn; }
+
+            bool try_make_obligatory_turn(bool player_team) override{
+                auto team = get_team(player_team);
+
+                if(!team->get_selected_creature()->is_alive() &&
+                    team->get_selectable_creature_count() == 1){
+                    for (int i = 0; i < team->get_creature_count(); ++i) {
+                        if(team->is_creature_selectable(i)) {
+                            make_turn_select_creature(player_team, i);
+                            on_obligatory_turn.invoke(player_action_creature_reselection);
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+
+            void swap_turns() override { m_is_player_turn = !m_is_player_turn; }
 
         private:
             team_t* get_team(bool player_team){
@@ -700,26 +732,30 @@ namespace ai{
     using namespace data_model;
 
     player_action get_enemy_action(game_status_i* game_status){
-        player_action result = player_action_none;
+        vector<player_action> results;
 
-        /*if(!game_status->get_current_enemy_team()->get_selected_creature()->is_alive()){
-            result = player_action_creature_reselection;
-        }*/
-
-        while (result == player_action_none){
-            int randomizer = rand() % 10;
-
-            if(game_status->can_make_turn_use_attack(false) && randomizer < 4)
-                result = player_action_attack;
-            else if(game_status->can_make_turn_use_skill(false) && randomizer < 6)
-                result = player_action_skill_use;
-            else if(game_status->can_make_turn_evolute(false) && randomizer < 8)
-                result = player_action_evolution;
-            else if(game_status->can_make_turn_select_any_creature(false))
-                result = player_action_creature_reselection;
+        if(game_status->can_make_turn_use_attack(false)){
+            results.push_back(player_action_attack);
+            results.push_back(player_action_attack);
+            results.push_back(player_action_attack);
+        }
+        if(game_status->can_make_turn_use_skill(false)){
+            results.push_back(player_action_skill_use);
+            results.push_back(player_action_skill_use);
+        }
+        if(game_status->can_make_turn_evolute(false)){
+            results.push_back(player_action_evolution);
+            results.push_back(player_action_evolution);
+            results.push_back(player_action_evolution);
+            results.push_back(player_action_evolution);
+            results.push_back(player_action_evolution);
+        }
+        if(game_status->get_current_enemy_team()->get_selectable_creature_count() > 1){
+            results.push_back(player_action_creature_reselection);
         }
 
-        return result;
+        int random_index = rng::next_random_index(results.size());
+        return results.at(random_index);
     }
 
     int get_enemy_selection(game_status_i* game_status) {
@@ -737,7 +773,7 @@ namespace ai{
         }
 
         if(selectables.empty())
-            return -1;
+            throw std::invalid_argument("Selectables it empty!");
 
         int random_index = rng::next_random_index(selectables.size());
         return selectables.at(random_index);
@@ -892,7 +928,7 @@ namespace view{
             cout << "COMPUTER WINS ROUND!" << endl;
         }
 
-        cout << endl << "--*-- --*-- --*--" << endl;
+        cout << "--*-- --*-- --*--" << endl;
         cout << endl;
     }
 
@@ -905,7 +941,7 @@ namespace view{
             cout << "COMPUTER WINS GAME!" << endl;
         }
 
-        cout << endl << "==*== ==*== ==*==" << endl;
+        cout << "==*== ==*== ==*==" << endl;
         cout << endl;
     }
 }
@@ -1099,6 +1135,9 @@ int main() {
     on_death.subscribe(show_creature_death);
     on_selection.subscribe(show_selection);
     on_evolution.subscribe(show_evolution);
+    on_obligatory_turn.subscribe([=](player_action){
+        cout << "Obligatory turn." << endl;
+    });
 
     init_module_rng();
     init_module_importing_data();
@@ -1123,27 +1162,27 @@ int main() {
 
             show_turn(game->is_player_turn());
 
-            player_action player_action;
+            if(!game->try_make_obligatory_turn(player_team))
+            {
+                player_action player_action;
 
-            if(game->is_player_turn()){
-                player_action = ask_for_player_action(game);
-            }else{
-                player_action = get_enemy_action(game);
-            }
+                if(game->is_player_turn()){
+                    player_action = ask_for_player_action(game);
+                }else{
+                    player_action = get_enemy_action(game);
+                }
 
-            switch (player_action) {
-                case player_action_attack: game->make_turn_use_attack(player_team); break;
-                case player_action_skill_use: game->make_turn_use_skill(player_team); break;
-                case player_action_evolution: game->make_turn_evolute(player_team); break;
-                case player_action_creature_reselection: {
-                    int selection = player_team ?
-                                    ask_for_creature_reselection(game->get_player_team()) :
-                                    get_enemy_selection(game);
-                    game->make_turn_select_creature(player_team,selection);
-                } break;
-                case player_action_none:
-                    cout << "INTERNAL ERROR: Null player action handling." << endl;
-                    break;
+                switch (player_action) {
+                    case player_action_attack: game->make_turn_use_attack(player_team); break;
+                    case player_action_skill_use: game->make_turn_use_skill(player_team); break;
+                    case player_action_evolution: game->make_turn_evolute(player_team); break;
+                    case player_action_creature_reselection: {
+                        int selection = player_team ?
+                            ask_for_creature_reselection(game->get_player_team()) :
+                            get_enemy_selection(game);
+                        game->make_turn_select_creature(player_team,selection);
+                    } break;
+                }
             }
 
             game->swap_turns();
