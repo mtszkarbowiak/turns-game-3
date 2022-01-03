@@ -163,6 +163,7 @@ namespace data_model{
         virtual size_t get_creature_count() = 0;
         virtual creature_i* get_creature(int index) = 0;
         virtual creature_i* get_selected_creature() = 0;
+        virtual int get_selected_creature_index() = 0;
         virtual bool is_creature_selectable(int index) = 0;
         int get_selectable_creature_count();
 
@@ -559,6 +560,7 @@ namespace logic{
             size_t get_creature_count() override { return m_creatures.size(); }
             creature_i* get_creature(int index) override { return m_creatures.at(index); }
             creature_i* get_selected_creature() override { return m_creatures.at(m_selection_index); }
+            int get_selected_creature_index() override { return m_selection_index; }
 
             creature_t* get_creature_mutable(int index) { return m_creatures.at(index); }
             creature_t* get_selected_creature_mutable() { return m_creatures.at(m_selection_index); }
@@ -767,22 +769,53 @@ namespace logic{
                 }
             }
         };
+
+
+        constexpr char attributes_separator = '\t';
+        void serialize_team(ofstream& o, team_i* team, int team_id){
+            o << team->get_creature_count() << attributes_separator;
+            o << endl;
+
+            for (int i = 0; i < team->get_creature_count(); ++i) {
+                auto creature = team->get_creature(i);
+                o << creature->get_creature()->id << attributes_separator;
+                o << creature->get_evolution()->creature_id << attributes_separator;
+                o << creature->get_health() << attributes_separator;
+                o << creature->get_exp();
+                o << endl;
+            }
+        }
     }
     using namespace logic::internal;
 
+    namespace serialization{
+
+        game_status_i* open_game(const string& save_name){
+            //TODO Opening game.
+            return nullptr;
+        }
+
+         void save_game(const string& save_name, game_status_i* game_status){
+            cout << save_name << " saved." << endl;
+
+            const string full_path = "Saves/" + save_name + ".txt";
+
+            ofstream o(full_path);
+
+            o << (game_status->get_enemy_teams_count() + 1) << endl;
+
+            serialize_team(o, game_status->get_player_team(), 0);
+
+            for (int i = 0; i < game_status->get_enemy_teams_count(); ++i) {
+                serialize_team(o, game_status->get_enemy_team(i), i + 1);
+            }
+
+            o.close();
+        }
+    }
 
     game_status_i* start_new_game(const vector<const creature_meta_t*>* player_picks, const difficulty_t* difficulty) {
         return new game_status_t(player_picks, difficulty);
-    }
-
-    game_status_i* open_game(const string& save_name){
-        //TODO Opening game.
-        return nullptr;
-    }
-
-    void save_game(const string& save_name, const game_status_i* game_status){
-        //TODO Saving game.
-        cout << save_name << " saved. Unfortunatelly it's only mock :<" << endl;
     }
 }
 
@@ -1229,6 +1262,7 @@ namespace controller{
 using namespace data_model;
 using namespace data_importing;
 using namespace logic;
+using namespace logic::serialization;
 using namespace view;
 using namespace controller;
 using namespace ai;
