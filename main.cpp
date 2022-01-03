@@ -205,6 +205,8 @@ namespace data_model{
         virtual bool try_make_obligatory_turn(bool player_team) = 0;
         virtual void swap_turns() = 0;
         virtual bool try_fight_next_enemy() = 0;
+
+        virtual ~game_status_i() { }
     };
 
 
@@ -719,6 +721,11 @@ namespace logic{
                 return true;
             }
 
+            ~game_status_t() override{
+                //TODO Game disposing.
+                cout << "Disposing game - OK." << endl;
+            }
+
         private:
             /// Gets contemporary team involved in fight.
             /// @param player_team Informs if the player's team is mentioned.
@@ -751,8 +758,18 @@ namespace logic{
     }
     using namespace logic::internal;
 
+
     game_status_i* start_new_game(const vector<const creature_meta_t*>* player_picks, const difficulty_t* difficulty) {
         return new game_status_t(player_picks, difficulty);
+    }
+
+    game_status_i* open_game(const string& save_name){
+        //TODO Opening game.
+        return nullptr;
+    }
+
+    void save_game(const string& save_name, game_status_i* game_status){
+        //TODO Saving game.
     }
 }
 
@@ -1194,6 +1211,8 @@ void main_menu() {
             case 0: {
                 auto game = init_new_game();
                 play(game);
+                delete game;
+
                 show_main_menu();
             }
             break;
