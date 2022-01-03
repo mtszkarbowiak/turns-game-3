@@ -517,8 +517,8 @@ namespace logic{
 
 
             void give_exp(float p) {
-                m_exp += abs(p);
-                m_exp = clamp(p, 0, get_evolution()->required_exp);
+                m_exp += p;
+                m_exp = clamp(m_exp, 0, get_evolution()->required_exp);
             }
 
             void heal_full(){
