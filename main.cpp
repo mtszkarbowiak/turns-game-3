@@ -311,6 +311,24 @@ namespace data_importing{
         return creatures->at(random_creature_metadata_id);
     }
 
+    const creature_meta_t* find_creature_metadata_by_ids(int creature_id){
+        for (auto creature_candidate : *creatures) {
+            if (creature_candidate->id == creature_id) {
+                return creature_candidate;
+            }
+        }
+        throw std::exception("No creature with such id.");
+    }
+
+    const evolution_meta_t* find_evolution_metadata_by_ids(int creature_id, int level){
+        for (auto evolution_candidate : *evolutions) {
+            if(evolution_candidate->creature_id != creature_id) continue;
+            if(evolution_candidate->level != level) continue;
+            return evolution_candidate;
+        }
+        throw std::exception("No evolution with such id.");
+    }
+
     float find_element_damage_mul(element attacker, element target){
         for(auto element_interaction : *element_interactions){
             if(attacker != element_interaction->attacker) continue;
@@ -557,6 +575,12 @@ namespace logic{
                 }
             }
 
+            /// Default constructor initializing team directly.
+            /// @param selection_index Index of creature fighting on the arena.
+            /// @param creatures Pointers to creatures of the team.
+            team_t(int selection_index, const vector<creature_t*>& creatures) :
+                    m_selection_index(selection_index), m_creatures(creatures) {}
+
             size_t get_creature_count() override { return m_creatures.size(); }
             creature_i* get_creature(int index) override { return m_creatures.at(index); }
             creature_i* get_selected_creature() override { return m_creatures.at(m_selection_index); }
@@ -619,8 +643,8 @@ namespace logic{
             /// @param player_picks Picks of the player. (Not disposed.)
             /// @param difficulty Difficulty of the game. (Not disposed.)
             game_status_t(
-                    const vector<const struct creature_meta_t*>* player_picks,
-                    const difficulty_t* difficulty)
+                const vector<const struct creature_meta_t*>* player_picks,
+                const difficulty_t* difficulty)
             {
                 m_is_player_turn = true;
                 m_turn_index = 0;
@@ -635,6 +659,18 @@ namespace logic{
                     m_enemy_teams->push_back(new_enemy_team);
                 }
             }
+
+            /// Creates new game status directly.
+            /// @param is_player_turn
+            /// @param turn_index
+            /// @param enemy_team_index
+            /// @param player_team
+            /// @param enemy_teams
+            game_status_t(bool is_player_turn, int turn_index, int enemy_team_index,
+                          team_t* player_team, vector<team_t*>* enemy_teams) :
+                m_is_player_turn(is_player_turn), m_turn_index(turn_index),
+                m_enemy_index(enemy_team_index), m_player_team(player_team),
+                m_enemy_teams(enemy_teams) {}
 
 
             bool can_make_turn_select_any_creature(bool player_team) override{
@@ -772,37 +808,100 @@ namespace logic{
 
 
         constexpr char attributes_separator = '\t';
+        constexpr char records_separator = '\n';
+
         void serialize_team(ofstream& o, team_i* team, int team_id){
             o << team->get_creature_count() << attributes_separator;
-            o << endl;
+            o << team->get_selected_creature_index() << attributes_separator;
+            o << records_separator;
 
             for (int i = 0; i < team->get_creature_count(); ++i) {
                 auto creature = team->get_creature(i);
                 o << creature->get_creature()->id << attributes_separator;
-                o << creature->get_evolution()->creature_id << attributes_separator;
+                o << creature->get_evolution()->level << attributes_separator;
                 o << creature->get_health() << attributes_separator;
                 o << creature->get_exp();
-                o << endl;
+                o << records_separator;
             }
         }
     }
     using namespace logic::internal;
 
     namespace serialization{
+        using namespace data_importing;
 
         game_status_i* open_game(const string& save_name){
-            //TODO Opening game.
-            return nullptr;
+            const string full_path = "Saves/" + save_name + ".txt";
+
+            /*ifstream i2(full_path);
+
+            while (i2.eof() == false)
+            {
+                int s;
+                i2 >> s;
+                cout << s << " ";
+            }
+
+            i2.close();*/
+
+            ifstream i(full_path);
+
+            int team_count, current_enemy_index, turn_index;
+            i >> team_count; i >> current_enemy_index; i >> turn_index;
+            bool is_player_turn;
+            i >> is_player_turn;
+
+            team_t* player_team;
+            auto enemy_teams = new vector<team_t*>;
+
+            for (int j = 0; j < team_count; ++j) {
+                int team_size, selection_index;
+                i >> team_size; i >> selection_index;
+
+                vector<creature_t*> creatures;
+                for (int c = 0; c < team_size; ++c) {
+                    int creature_id2, level2;
+                    cin >> creature_id2;
+                    cin >> level2;
+
+                    auto creature_meta = find_creature_metadata_by_ids(creature_id2);
+                    auto evolution_meta = find_evolution_metadata_by_ids(creature_id2, level2);
+
+                    float hp2, exp2;
+                    cin >> hp2;
+                    cin >> exp2;
+
+                    auto new_creature = new creature_t(creature_meta, evolution_meta, hp2, exp2);
+                    creatures.push_back(new_creature);
+                }
+
+                auto new_team = new team_t(selection_index, creatures);
+
+                if(j == 0) player_team = new_team;
+                else enemy_teams->push_back(new_team);
+            }
+
+            i.close();
+
+            auto result = new game_status_t(
+                is_player_turn, turn_index, current_enemy_index,
+                player_team, enemy_teams);
+
+            return result;
         }
 
          void save_game(const string& save_name, game_status_i* game_status){
-            cout << save_name << " saved." << endl;
+            cout << save_name << " saved." << records_separator;
 
             const string full_path = "Saves/" + save_name + ".txt";
 
             ofstream o(full_path);
 
-            o << (game_status->get_enemy_teams_count() + 1) << endl;
+            o << (game_status->get_enemy_teams_count() + 1);
+            o << attributes_separator << game_status->get_current_enemy_index();
+            o << attributes_separator << game_status->get_turn_index();
+            o << attributes_separator << game_status->is_player_turn();
+            o << records_separator;
 
             serialize_team(o, game_status->get_player_team(), 0);
 
@@ -1301,7 +1400,15 @@ void main_menu() {
             break;
 
             case 1: {
-                show_not_yet_implemented_dialog();
+                cout << "Enter save name:" << endl;
+                string save_name;
+                cin >> save_name;
+                cout << "Opening save " << save_name << endl;
+
+                auto game = open_game(save_name);
+                play(game);
+
+                show_main_menu();
             }break;
 
             case 2: {
