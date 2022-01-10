@@ -836,6 +836,7 @@ namespace logic{
 
         constexpr char attributes_separator = '\t';
         constexpr char records_separator = '\n';
+        constexpr float float_to_int_mul_precision = 10.0f;
 
         void serialize_team(ofstream& o, team_i* team, int team_id){
             o << team->get_creature_count() << attributes_separator;
@@ -846,8 +847,8 @@ namespace logic{
                 auto creature = team->get_creature(i);
                 o << creature->get_creature()->id << attributes_separator;
                 o << creature->get_evolution()->level << attributes_separator;
-                o << creature->get_health() << attributes_separator;
-                o << creature->get_exp();
+                o << (int)(creature->get_health() * float_to_int_mul_precision) << attributes_separator;
+                o << (int)(creature->get_exp() * float_to_int_mul_precision);
                 o << records_separator;
             }
         }
@@ -856,6 +857,7 @@ namespace logic{
 
     namespace serialization{
         using namespace data_importing;
+        using internal::float_to_int_mul_precision;
 
         game_status_i* open_game(const string& save_name){
             const string full_path = "Saves/" + save_name + ".txt";
@@ -863,8 +865,13 @@ namespace logic{
             vector<int> buffer = buffered_numeric_io_operations::read_buffered_numbers_file(full_path);
             int buffer_i = 0;
 
-            function<int()> next_int = [&buffer_i, &buffer]() -> int{ return buffer.at(buffer_i++); };
-            function<float()> next_float = [&next_int]() -> float{ return (float) (next_int()); };
+            function<int()> next_int = [&buffer_i, &buffer]() -> int{
+                return buffer.at(buffer_i++);
+            };
+            function<float()> next_float = [&next_int]() -> float{
+                float as_f = (float) (next_int());
+                return as_f / float_to_int_mul_precision;
+            };
 
             int
                 team_count = next_int(),
