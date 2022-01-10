@@ -16,6 +16,7 @@ using std::function;
 
 
 
+
 namespace maths2{
     /// Limits value to specific bounds
     /// @param t Original value.
@@ -53,6 +54,7 @@ namespace rng{
 
     using namespace rng::internal;
 
+    /// Initializes random number generator.
     void init_module_rng(){
         rd2 = new random_device();
         random_engine = new default_random_engine((*rd2)());
@@ -61,11 +63,15 @@ namespace rng{
         cout << "RNG initialized." << endl;
     }
 
+    /// New random multiplier.
+    /// @return Random number between 0 and 1.
     float next_random_float_01(){
         return default_distribution->operator()(*random_engine);
-        // return (*default_distribution)(*random_engine);
     }
 
+    /// Returns index of random element.
+    /// @param len Length of the collection.
+    /// @return Random index.
     int next_random_index(size_t len){
         int len2 = static_cast<size_t>(len);
         uniform_int_distribution distribution(0, len2 - 1);
@@ -76,6 +82,8 @@ namespace rng{
 
 
 namespace events{
+    /// Utility class to announce invocation of some one-argument event.
+    /// @tparam args_t Type of the argument.
     template<class args_t>
     class event{
     private:
@@ -221,7 +229,7 @@ namespace data_model{
         virtual void swap_turns() = 0;
         virtual bool try_fight_next_enemy() = 0;
 
-        virtual ~game_status_i() { }
+        virtual ~game_status_i() = default;
     };
 
 
@@ -245,7 +253,7 @@ namespace data_model{
         return get_player_team()->is_defeated() || are_all_enemy_teams_defeated();
     }
 
-    team_i *game_status_i::get_current_enemy_team() {
+    team_i* game_status_i::get_current_enemy_team() {
         return get_enemy_team(get_current_enemy_index());
     }
 
@@ -300,8 +308,10 @@ namespace data_importing{
             "None"
     };
 
-
-    element get_element_by_name(const string &name) {
+    /// Distinguishes the element by its name (or none).
+    /// @param name Literal name of the element.
+    /// @return Result element or none.
+    element get_element_by_name(const string& name) {
         int index = 0;
         for (const char* element_name : element_names) {
             auto result = name.compare(element_name);
@@ -310,21 +320,28 @@ namespace data_importing{
         return element::none;
     }
 
-
+    /// Finds default evolution (level 0) by its creature metadata (or throws exception).
+    /// @param creature_metadata Source creature metadata.
+    /// @return Default evolution metadata.
     const evolution_meta_t* find_default_evolution_for_creature(const creature_meta_t* creature_metadata) {
         for (auto evolution : *evolutions){
             if(evolution->creature_id != creature_metadata->id) continue;
             if(evolution->level != 0) continue;
             return evolution;
         }
-        return nullptr;
+        throw std::exception("Creature has no default evolution.");
     }
 
+    /// Selects random creature metadata.
+    /// @return Random creature metadata.
     const creature_meta_t* find_random_creature_metadata(){
         auto random_creature_metadata_id = rand() % creatures->size();
         return creatures->at(random_creature_metadata_id);
     }
 
+    /// Finds creature metadata by its id (or throws exception).
+    /// @param creature_id ID of a creature metadata.
+    /// @return Pointer to the creature metadata.
     const creature_meta_t* find_creature_metadata_by_ids(int creature_id){
         for (auto creature_candidate : *creatures) {
             if (creature_candidate->id == creature_id) {
@@ -334,6 +351,10 @@ namespace data_importing{
         throw std::exception("No creature with such id.");
     }
 
+    /// Finds evolution metadata by its id and level (or throws exception).
+    /// @param creature_id ID of a creature metadata.
+    /// @param level Level of the evolution.
+    /// @return Pointer to the evolution metadata.
     const evolution_meta_t* find_evolution_metadata_by_ids(int creature_id, int level){
         for (auto evolution_candidate : *evolutions) {
             if(evolution_candidate->creature_id != creature_id) continue;
@@ -343,6 +364,10 @@ namespace data_importing{
         throw std::exception("No evolution with such id.");
     }
 
+    /// Searches if there is an interaction between elements altering damage.
+    /// @param attacker Element of the attacker.
+    /// @param target Element of the target.
+    /// @return Damage mul. (1 for no interaction)
     float find_element_damage_mul(element attacker, element target){
         for(auto element_interaction : *element_interactions){
             if(attacker != element_interaction->attacker) continue;
@@ -490,6 +515,9 @@ namespace data_importing{
 
 
 namespace buffered_numeric_io_operations{
+    /// Buffers entire file containing a list of numbers.
+    /// @param file_name Full path to the file.
+    /// @return Buffered numbers.
     vector<int> read_buffered_numbers_file(const string& file_name){
         ifstream i2(file_name);
         vector<int> result;
@@ -504,14 +532,14 @@ namespace buffered_numeric_io_operations{
         return result;
     }
 
-    void write_buffered_numbers_file(const string& file_name, const vector<int>& values){
-        ofstream o2(file_name);
-        for (int i : values) {
-            o2 << i;
-            o2 << ' ';
-        }
-        o2.close();
-    }
+    // void write_buffered_numbers_file(const string& file_name, const vector<int>& values){
+    //     ofstream o2(file_name);
+    //     for (int i : values) {
+    //         o2 << i;
+    //         o2 << ' ';
+    //     }
+    //     o2.close();
+    // }
 }
 
 
@@ -980,6 +1008,10 @@ namespace logic{
         }
     }
 
+    /// Creates new game using parsed player input.
+    /// @param player_picks Metadata(s) of desired player picks.
+    /// @param difficulty Metadata of desired difficulty.
+    /// @return New game instance.
     game_status_i* start_new_game(const vector<const creature_meta_t*>* player_picks, const difficulty_t* difficulty) {
         return new game_status_t(player_picks, difficulty);
     }
@@ -1423,6 +1455,9 @@ namespace controller{
         saving_func(save_name, game_status);
     }
 }
+
+
+
 
 
 using namespace data_model;
