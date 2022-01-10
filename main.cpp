@@ -473,6 +473,33 @@ namespace data_importing{
 
 
 
+namespace buffered_numeric_io_operations{
+    vector<int> read_buffered_numbers_file(const string& file_name){
+        ifstream i2(file_name);
+        vector<int> result;
+
+        while (!i2.eof())
+        {
+            int s; i2 >> s;
+            result.push_back(s);
+        }
+
+        i2.close();
+        return result;
+    }
+
+    void write_buffered_numbers_file(const string& file_name, const vector<int>& values){
+        ofstream o2(file_name);
+        for (int i : values) {
+            o2 << i;
+            o2 << ' ';
+        }
+        o2.close();
+    }
+}
+
+
+
 namespace logic{
     using namespace data_model;
     using namespace data_importing;
@@ -833,43 +860,33 @@ namespace logic{
         game_status_i* open_game(const string& save_name){
             const string full_path = "Saves/" + save_name + ".txt";
 
-            /*ifstream i2(full_path);
+            vector<int> buffer = buffered_numeric_io_operations::read_buffered_numbers_file(full_path);
+            int buffer_i = 0;
 
-            while (i2.eof() == false)
-            {
-                int s;
-                i2 >> s;
-                cout << s << " ";
-            }
+            function<int()> next_int = [&buffer_i, &buffer]() -> int{ return buffer.at(buffer_i++); };
+            function<float()> next_float = [&next_int]() -> float{ return (float) (next_int()); };
 
-            i2.close();*/
+            int
+                team_count = next_int(),
+                current_enemy_index = next_int(),
+                turn_index = next_int();
 
-            ifstream i(full_path);
-
-            int team_count, current_enemy_index, turn_index;
-            i >> team_count; i >> current_enemy_index; i >> turn_index;
-            bool is_player_turn;
-            i >> is_player_turn;
+            bool is_player_turn = next_int() == 1;
 
             team_t* player_team;
             auto enemy_teams = new vector<team_t*>;
 
             for (int j = 0; j < team_count; ++j) {
-                int team_size, selection_index;
-                i >> team_size; i >> selection_index;
+                int team_size = next_int(), selection_index = next_int();
 
                 vector<creature_t*> creatures;
                 for (int c = 0; c < team_size; ++c) {
-                    int creature_id2, level2;
-                    cin >> creature_id2;
-                    cin >> level2;
+                    int creature_id2 = next_int(), level2 = next_int();
 
                     auto creature_meta = find_creature_metadata_by_ids(creature_id2);
                     auto evolution_meta = find_evolution_metadata_by_ids(creature_id2, level2);
 
-                    float hp2, exp2;
-                    cin >> hp2;
-                    cin >> exp2;
+                    float hp2 = next_float(), exp2 = next_float();
 
                     auto new_creature = new creature_t(creature_meta, evolution_meta, hp2, exp2);
                     creatures.push_back(new_creature);
@@ -880,8 +897,6 @@ namespace logic{
                 if(j == 0) player_team = new_team;
                 else enemy_teams->push_back(new_team);
             }
-
-            i.close();
 
             auto result = new game_status_t(
                 is_player_turn, turn_index, current_enemy_index,
