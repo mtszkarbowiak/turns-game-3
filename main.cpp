@@ -101,10 +101,10 @@ namespace events{
 
 
 namespace data_model{
-    enum element{
+    enum class element{
         water = 0,   earth = 1,   air = 2,
         fire = 3,    ice = 4,     metal = 5,
-        element_none = 7,
+        none = 7,
     };
 
     enum class skill_type{
@@ -307,7 +307,7 @@ namespace data_importing{
             auto result = name.compare(element_name);
             if(result == 0) return (element) index;
         }
-        return element_none;
+        return element::none;
     }
 
 
@@ -437,33 +437,33 @@ namespace data_importing{
             auto buff = element_interaction_damage_mul_buff;
 
             element_interactions = new vector<const element_interaction_i*>{
-                new element_interaction_i{ water, water, nerf },
-                new element_interaction_i{ water, earth, buff },
-                new element_interaction_i{ water, fire, buff },
+                new element_interaction_i{element::water, element::water, nerf },
+                new element_interaction_i{element::water, element::earth, buff },
+                new element_interaction_i{element::water, element::fire, buff },
 
-                new element_interaction_i{ earth, air, nerf },
-                new element_interaction_i{ earth, fire, buff },
-                new element_interaction_i{ earth, ice, buff },
-                new element_interaction_i{ earth, metal, buff},
+                new element_interaction_i{element::earth, element::air, nerf },
+                new element_interaction_i{element::earth, element::fire, buff },
+                new element_interaction_i{element::earth, element::ice, buff },
+                new element_interaction_i{element::earth, element::metal, buff},
 
-                new element_interaction_i{ air, earth, nerf },
-                new element_interaction_i{ air, ice, buff },
-                new element_interaction_i{ air, metal, buff },
+                new element_interaction_i{element::air, element::earth, nerf },
+                new element_interaction_i{element::air, element::ice, buff },
+                new element_interaction_i{element::air, element::metal, buff },
 
-                new element_interaction_i{ fire, water, nerf },
-                new element_interaction_i{ fire, earth, buff },
-                new element_interaction_i{ fire, ice, buff },
-                new element_interaction_i{ fire, metal, nerf },
+                new element_interaction_i{element::fire, element::water, nerf },
+                new element_interaction_i{element::fire, element::earth, buff },
+                new element_interaction_i{element::fire, element::ice, buff },
+                new element_interaction_i{element::fire, element::metal, nerf },
 
-                new element_interaction_i{ ice, water, nerf },
-                new element_interaction_i{ ice, earth, buff },
-                new element_interaction_i{ ice, fire, nerf },
-                new element_interaction_i{ ice, ice, nerf },
+                new element_interaction_i{element::ice, element::water, nerf },
+                new element_interaction_i{element::ice, element::earth, buff },
+                new element_interaction_i{element::ice, element::fire, nerf },
+                new element_interaction_i{element::ice, element::ice, nerf },
 
-                new element_interaction_i{ metal, water, buff },
-                new element_interaction_i{ metal, air, buff },
-                new element_interaction_i{ metal, fire, nerf },
-                new element_interaction_i{ metal, metal, nerf },
+                new element_interaction_i{element::metal, element::water, buff },
+                new element_interaction_i{element::metal, element::air, buff },
+                new element_interaction_i{element::metal, element::fire, nerf },
+                new element_interaction_i{element::metal, element::metal, nerf },
             };
         }
     }
