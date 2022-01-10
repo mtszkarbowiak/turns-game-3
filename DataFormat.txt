@@ -1,0 +1,3 @@
+[team_c] [enemy_i] [turn_i] [is_player_turn]
+[team_i] [selection_i]
+[creature_i] [level] [hp] [exp]
