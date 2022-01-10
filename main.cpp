@@ -138,12 +138,12 @@ namespace data_model{
         element element;
     };
 
-    enum player_action{
-        player_action_none = 0,
-        player_action_attack = 1,
-        player_action_skill_use = 2,
-        player_action_creature_reselection = 4,
-        player_action_evolution = 8,
+    enum class player_action{
+        none = 0,
+        attack = 1,
+        skill_use = 2,
+        creature_reselection = 4,
+        evolution = 8,
     };
 
 
@@ -759,7 +759,7 @@ namespace logic{
                     for (int i = 0; i < team->get_creature_count(); ++i) {
                         if(team->is_creature_selectable(i)) {
                             make_turn_select_creature(player_team, i);
-                            on_obligatory_turn.invoke(player_action_creature_reselection);
+                            on_obligatory_turn.invoke(player_action::creature_reselection);
                             return true;
                         }
                     }
@@ -949,23 +949,23 @@ namespace ai{
         vector<player_action> results;
 
         if(game_status->can_make_turn_use_attack(false)){
-            results.push_back(player_action_attack);
-            results.push_back(player_action_attack);
-            results.push_back(player_action_attack);
+            results.push_back(player_action::attack);
+            results.push_back(player_action::attack);
+            results.push_back(player_action::attack);
         }
         if(game_status->can_make_turn_use_skill(false)){
-            results.push_back(player_action_skill_use);
-            results.push_back(player_action_skill_use);
+            results.push_back(player_action::skill_use);
+            results.push_back(player_action::skill_use);
         }
         if(game_status->can_make_turn_evolute(false)){
-            results.push_back(player_action_evolution);
-            results.push_back(player_action_evolution);
-            results.push_back(player_action_evolution);
-            results.push_back(player_action_evolution);
-            results.push_back(player_action_evolution);
+            results.push_back(player_action::evolution);
+            results.push_back(player_action::evolution);
+            results.push_back(player_action::evolution);
+            results.push_back(player_action::evolution);
+            results.push_back(player_action::evolution);
         }
         if(game_status->get_current_enemy_team()->get_selectable_creature_count() > 1){
-            results.push_back(player_action_creature_reselection);
+            results.push_back(player_action::creature_reselection);
         }
 
         int random_index = rng::next_random_index(results.size());
@@ -1202,29 +1202,29 @@ namespace controller{
             cout << change_input_key << ") Change creature on the arena" << endl;
 
         char input;
-        player_action result = player_action_none;
+        player_action result = player_action::none;
 
-        while (result == player_action_none)
+        while (result == player_action::none)
         {
             cin >> input;
             switch (input) {
-                case attack_input_key: result = player_action_attack; break;
-                case skill_input_key: result = player_action_skill_use; break;
-                case evolution_input_key: result = player_action_evolution; break;
-                case change_input_key: result = player_action_creature_reselection; break;
+                case attack_input_key: result = player_action::attack; break;
+                case skill_input_key: result = player_action::skill_use; break;
+                case evolution_input_key: result = player_action::evolution; break;
+                case change_input_key: result = player_action::creature_reselection; break;
                 default: {
                     show_invalid_index_answer_dialog();
-                    result = player_action_none;
+                    result = player_action::none;
                 } break;
             }
 
             if(
-                (result == player_action_attack && !game_status->can_make_turn_use_attack(true)) ||
-                (result == player_action_skill_use && !game_status->can_make_turn_use_skill(true)) ||
-                (result == player_action_evolution && !game_status->can_make_turn_evolute(true)) ||
-                (result == player_action_creature_reselection && !game_status->can_make_turn_select_any_creature(true))
+                (result == player_action::attack && !game_status->can_make_turn_use_attack(true)) ||
+                (result == player_action::skill_use && !game_status->can_make_turn_use_skill(true)) ||
+                (result == player_action::evolution && !game_status->can_make_turn_evolute(true)) ||
+                (result == player_action::creature_reselection && !game_status->can_make_turn_select_any_creature(true))
             ) {
-                result = player_action_none;
+                result = player_action::none;
                 show_invalid_index_answer_dialog();
             }
         }
@@ -1495,10 +1495,10 @@ void play(game_status_i* game) {
                 }
 
                 switch (player_action) {
-                    case player_action_attack: game->make_turn_use_attack(player_team); break;
-                    case player_action_skill_use: game->make_turn_use_skill(player_team); break;
-                    case player_action_evolution: game->make_turn_evolute(player_team); break;
-                    case player_action_creature_reselection: {
+                    case player_action::attack: game->make_turn_use_attack(player_team); break;
+                    case player_action::skill_use: game->make_turn_use_skill(player_team); break;
+                    case player_action::evolution: game->make_turn_evolute(player_team); break;
+                    case player_action::creature_reselection: {
                         int selection = player_team ?
                             ask_for_creature_reselection(game->get_player_team()) :
                             get_enemy_selection(game);
