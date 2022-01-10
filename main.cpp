@@ -107,6 +107,20 @@ namespace data_model{
         element_none = 7,
     };
 
+    enum class skill_type{
+        /// No skill
+        none = 0,
+
+        /// Damage applied to all enemy team members.
+        massive_damage = 1,
+
+        /// Attack of value corresponding to max health of the enemy (evolution).
+        max_hp_ratio_damage = 2,
+
+        /// Attack of value corresponding to current (not max) health of the enemy (evolution).
+        hp_ratio_damage = 3,
+    };
+
     struct difficulty_t{
         string name;
         float out_dmg_mul;
@@ -126,7 +140,7 @@ namespace data_model{
         float bounty_exp;
         float required_exp;
 
-        int skill_type;
+        skill_type skill_type;
         float skill_power;
 
         const evolution_meta_t* next_evolution;
@@ -400,7 +414,9 @@ namespace data_importing{
                 i >> evolution->bounty_exp;
                 i >> evolution->required_exp;
 
-                i >> evolution->skill_type;
+                int skill_type_id; i >> skill_type_id;
+                evolution->skill_type = (skill_type) skill_type_id;
+
                 i >> evolution->skill_power;
 
                 string evolution_name;
@@ -519,6 +535,8 @@ namespace logic{
     event<player_action> on_obligatory_turn;
     /// Event invoked before passing defeated enemy.
     event<int> on_enemy_pass;
+    /// Event invoked on skill use.
+    event<skill_type> on_skill_use;
 
 
     namespace internal
@@ -720,7 +738,7 @@ namespace logic{
             bool can_make_turn_use_skill(bool player_team) override {
                 return
                         get_team(player_team)->get_selected_creature()->is_alive() &&
-                        get_team(player_team)->get_selected_creature()->get_evolution()->skill_type > 0;
+                        get_team(player_team)->get_selected_creature()->get_evolution()->skill_type != skill_type::none;
             }
 
             void make_turn_select_creature(bool player_team, int selection_index) override {
@@ -742,11 +760,34 @@ namespace logic{
                 m_turn_index++;
             }
             void make_turn_use_skill(bool player_team) override {
-                auto target = get_team(!player_team)->get_selected_creature_mutable();
-                auto attacker = get_team(player_team)->get_selected_creature_mutable();
+                team_t* target_team = get_team(!player_team);
+                team_t* attacker_team = get_team(player_team);
+                auto target = target_team->get_selected_creature_mutable();
+                auto attacker = attacker_team->get_selected_creature_mutable();
 
-                //TODO Skill attack
-                damage_default_attack(attacker, target);
+                auto skill_type = attacker->get_evolution()->skill_type;
+                float skill_value = attacker->get_evolution()->skill_power / 100.0f;
+
+                on_skill_use.invoke(skill_type);
+
+                switch(skill_type) {
+                    case skill_type::none: {
+                        throw std::exception("This creature has no skill!");
+                    }
+                    case skill_type::hp_ratio_damage: {
+                        true_attack(attacker, target, target->get_health() * skill_value);
+                    }break;
+                    case skill_type::max_hp_ratio_damage:{
+                        true_attack(attacker, target, target->get_evolution()->max_health * skill_value);
+                    }break;
+                    case skill_type::massive_damage:{
+                        for (int i = 0; i < attacker_team->get_creature_count(); ++i) {
+                            auto creature = attacker_team->get_creature_mutable(i);
+                            if(!creature->is_alive()) continue;
+                            true_attack(attacker, creature, skill_value);
+                        }
+                    }break;
+                }
                 m_turn_index++;
             }
 
@@ -811,6 +852,16 @@ namespace logic{
                 return player_team ? m_player_team : m_enemy_teams->at(m_enemy_index);
             }
 
+            static void true_attack(creature_t* attacker, creature_t* target, float damage){
+                target->damage_anonymously(damage);
+                on_damage.invoke({attacker, target, damage});
+
+                if(!target->is_alive()){
+                    attacker->give_exp(target->get_evolution()->bounty_exp);
+                    on_death.invoke(target);
+                }
+            }
+
             static void damage_default_attack(creature_t* attacker, creature_t* target){
                 const float power = attacker->get_evolution()->strength;
                 const float element_mul = find_element_damage_mul(
@@ -823,13 +874,7 @@ namespace logic{
                 if(rng::next_random_float_01() > miss_possibility)
                     result_dmg = 0;
 
-                target->damage_anonymously(result_dmg);
-                on_damage.invoke({attacker, target, result_dmg});
-
-                if(!target->is_alive()){
-                    attacker->give_exp(target->get_evolution()->bounty_exp);
-                    on_death.invoke(target);
-                }
+                true_attack(attacker, target, result_dmg);
             }
         };
 
@@ -1457,6 +1502,20 @@ void static_init_modules() {
         cout << "--- *** --- *** ---" << endl;
         cout << "ENEMY No." << enemy_index << " DEFEATED!!!" << endl;
         cout << "--- *** --- *** ---" << endl << endl;
+    });
+    on_skill_use.subscribe([=](skill_type skill_type){
+        switch (skill_type) {
+            case skill_type::hp_ratio_damage:{
+                cout << "<Current Health Ratio Damage> used!" << endl;
+            }break;
+            case skill_type::massive_damage:{
+                cout << "<Team Global Damage> used!" << endl;
+            }break;
+            case skill_type::max_hp_ratio_damage:{
+                cout << "<Max Health Ratio Damage> used!" << endl;
+            }break;
+            default: throw std::exception("Unknown skill type.");
+        }
     });
 
     init_module_rng();
